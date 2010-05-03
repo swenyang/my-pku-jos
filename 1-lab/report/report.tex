@@ -1,0 +1,611 @@
+\documentclass{article}
+
+\usepackage{amssymb}
+\usepackage{txfonts}
+\usepackage[pinyin]{babel}
+\usepackage{xunicode}
+\usepackage[cm-default]{fontspec}
+\usepackage{graphicx}
+\usepackage[colorlinks,linkcolor=red,bookmarksnumbered,bookmarksopen]{hyperref}
+\usepackage{CJK}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt
+
+\setromanfont{SimSun}
+
+\begin{document}
+
+\centerline{\Huge{操作系统Lab 1实习报告}}
+\rightline{\large{00748267 杨文新}}
+
+\tableofcontents
+
+\section{概述}
+本次实习完成了6.828 Lab 1的基本内容，熟悉了PC启动、系统加载、内核加载等基本过程。在完成Exercise 1～12之外，还初步完成了两个Challenge，Make grade得到50/50的分数。\\
+
+\section{Excercise 1}
+\fbox{\parbox{\textwidth}{
+Exercise 1.  Read or at least carefully scan the entire PC Assembly Language book, except that you should skip all sections after 1.3.5 in chapter 1, which talk about features of the NASM assembler that do not apply directly to the GNU assembler. You may also skip chapters 5 and 6, and all sections under 7.2, which deal with processor and language features we won't use in 6.828. \\
+Also read the section "The Syntax" in Brennan's Guide to Inline Assembly to familiarize yourself with the most important features of GNU assembler syntax.
+}}
+
+\begin{Large}答：\end{Large}
+PC Assembly Language book主要介绍了计算机底层的工作机制。第一章介绍了计算机的组织体系，包括实模式、16位保护模式和32位保护模式等；第二章则介绍了汇编语言基本指令，如整数运算指令、控制指令；第三章着重讲解位操作指令和逻辑运算指令，还有小尾存储和大尾存储机制等等；第四章则介绍了计算机的寻址、堆栈和函数调用规范。\\
+Brennan's Guide to Inline Assembly则主要介绍了AT\&T汇编与Intel汇编的不同之处和内联汇编入门介绍。\\
+
+\section{Excercise 2}
+\fbox{\parbox{\textwidth}{
+Exercise 2. Scan through the Using Bochs internal debugger section of the Bochs user manual to get a feel for these commands and their syntax. Play with the commands a little: do some stepping and tracing through the code, examining CPU registers and memory and disassembling instructions at different points, without worrying too much yet about what the code is actually doing. While the kernel monitor is waiting for user input (or at any other time the simulation is running), you can always hit CTRL-C in the shell window from which you ran Bochs in order to halt the simulation and break back into the Bochs debugger. Be sure you understand the distinction between which software you're interacting with when you type commands in the kernel monitor versus in the Bochs debugger.
+}}
+\begin{Large}答：\end{Large}
+总结Bochs常用命令有如下：\\
+\fbox{调试}：vb addr   在虚拟地址addr处设置断点\\
+\indent lb addr     在线性地址addr处设置断点\\
+\indent b(pb) addr    在物理地址addr处设置断点\\
+\fbox{运行}：s  单步执行（也可以跟一个参数表示执行多少步） \\
+\indent c 执行至下一个断点\\
+\fbox{查看内存}：x(xv)/nuf addr 显示线性地址的内容，其中n为显示的单元数，u为显示单元的大小（b BYTE , h WORD, w DWORD , g DWORD64），f为显示格式（x 十六进制，d 十进制，t 无符号十进制，o 八进制，t 二进制，c 字符） \\
+\indent xp/nuf addr 显示物理地址的内容\\
+\fbox{查看寄存器}：info r 查看所有应用寄存器内容\\
+\indent info eflags 查看状态寄存器\\
+\fbox{查看GDT内容}：info gdt [a[ b]]  查看gdt内容，参数a,b：显示GDT表中从第a项到第b项的内容，如果只有a就只显示第a项\\
+\fbox{查看CPU状态}：info cpu 查看所有CPU寄存器内容\\
+\indent dump\_cpu 查看完整的CPU信息\\
+
+\section{Exercise 3}
+\fbox{\parbox{\textwidth}{
+Exercise 3.  Use the Bochs debugger to trace into the ROM BIOS for a few more instructions, and try to guess what it might be doing. You might want to look at the Bochs I/O address assignments,  Phil Storrs I/O Ports Description, as well as other materials on the 6.828 reference materials page. No need to figure out all the details - just the general idea of what the BIOS is doing first. 
+}}
+\begin{Large}答：\end{Large}
+BIOS运行时对设备如VGA显示器等进行了一些初始化的工作，设置中断描述符表，设置临时的GDT表，使PC工作模式从16位实模式切换到32位保护模式。然后读boot loader，调用bootmain函数。
+
+\section{Exercise 4}
+\fbox{\parbox{\textwidth}{
+Exercise 4.  Set a breakpoint at address 0x7c00, which is where the boot sector will be loaded. Continue execution until that break point. Trace through the code in boot/boot.S, using the source code and the disassembly file obj/boot/boot.asm to keep track of where you are. Also use the u command in Bochs to disassemble sequences of instructions in the boot loader, and compare the original boot loader source code with both the GNU disassembly in obj/boot/boot.asm  and the Bochs disassembly from the u command.\\
+Trace into bootmain() in boot/main.c, and then into readsect(). Identify the exact assembly instructions that correspond to each of the statements in readsect(). Trace through the rest of readsect() and back out into bootmain(), and identify the begin and end of the for loop that reads the remaining sectors of the kernel from the disk. Find out what code will run when the loop is finished, set a breakpoint there, and continue to that breakpoint. Then step through the remainder of the boot loader. 
+}}
+\begin{Large}答：\end{Large}
+在bootmain()函数里，执行for循环前一条语句为
+\begin{verbatim}
+  eph = ph + ELFHDR->e_phnum;
+\end{verbatim}
+Trace进去后得到几条运行指令：
+\begin{verbatim}
+  movzwl 0x1002c,%eax 
+  shl    $0x5,%eax 
+  lea    (%ebx,%eax,1),%esi 
+  jmp    7d79 <bootmain+0x53> 
+\end{verbatim}
+继续trace，发现0x7d79位置正是进入for循环的地方，因此for循环的第一条语句为 
+\begin{verbatim}
+  0x7d79 cmp   %esi,%ebx 
+\end{verbatim}
+跳出for循环的位置：7d7b:jb 7d65 <bootmain+0x3f>，此时for循环的条件已经不满足，因此不再跳转，顺序执行接下来的代码。 \\
+当for循环结束后，执行调用进入内核的函数，位置为0x7d7d 
+\begin{verbatim}
+  0x7d7d: mov    0x10018, %eax
+  and    $0xffffff,\%eax
+  call   %eax
+\end{verbatim}
+
+\fbox{\parbox{\textwidth}{At exactly what point does the processor transition from executing 16-bit code to executing 32-bit code?}}
+\begin{Large}答：\end{Large}
+在boot/boot.S文件中由关于boot loader设置GDT表的指令：
+\begin{verbatim}
+  lgdt    gdtdesc
+  movl    %cr0, %eax
+  orl     $CR0_PE_ON, %eax
+  movl    %eax, %cr0
+
+  # Jump to next instruction, but in 32-bit code segment.
+  # Switches processor into 32-bit mode.
+  ljmp    $PROT_MODE_CSEG, $protcseg
+\end{verbatim}
+在执行ljmp这条指令时将会从16位模式切换到32位模式。一下是我trace得到的，从地址可以看处从16位到32位偏移地址的变化。
+\begin{verbatim}
+  <bochs:21> s
+  Next at t=819269
+  (0) [0x00007c2a] 0000:7c2a (unk. ctxt): mov cr0, eax        ; 0f22c0
+  <bochs:22> s
+  Next at t=819270
+  (0) [0x00007c2d] 0000:0x00007c2d (unk. ctxt): jmp far 0008:7c32 ;ea327c0800
+\end{verbatim}
+
+\fbox{\parbox{\textwidth}{
+What is the last instruction of the boot loader executed, and what is the first instruction of the kernel it just loaded? }}
+\begin{Large}答：\end{Large}
+boot loader执行的最后一条指令为：
+\begin{verbatim}
+  0x7d87:call   %eax
+\end{verbatim}
+内核执行的第一条指令为：
+\begin{verbatim}
+  0x0010000c:movw	$0x1234,0x472
+\end{verbatim}
+
+\fbox{\parbox{\textwidth}{
+How does the boot loader decide how many sectors it must read in order to fetch the entire kernel from disk? Where does it find this information? }}
+\begin{Large}答：\end{Large}
+进入BIOS时，会现读取第0个扇区的信息，而后进入boot loader读内核的信息，内核被保存在disk的开始位置第1个扇区连续几个扇区里面，内核的文件格式为ELF，因此读第1个扇区到ELFHDR时可以根据得到内核文件的信息，如需要读几个扇区等。
+
+\section{Challenge 1: Make JOS boot from a simulated CD-ROM}
+\fbox{\parbox{\textwidth}{
+ Challenge!  Make JOS boot under Bochs from a simulated CD-ROM. You will need to learn about the mkisofs utility (available on Athena), and will have to modify the .bochsrc appropriately. }}
+\begin{Large}答：\end{Large}
+需要使用mkisofs工具，并且对boot/Makefrag文件作一点修改。不过启动还是存在一些小问题，到一定地步就卡住了……\\
+\begin{enumerate}
+\item 参考网上关于mkisofs的用法，修改boot/Makefrag文件，在"\$(OBJDIR)/boot/boot: \$(BOOT\_OBJS)"加一行如下代码：
+\begin{verbatim}
+mkisofs -no-emul-boot -b $(OBJDIR)/boot/boot -o $(OBJDIR)/boot/boot.iso .
+\end{verbatim}
+\item 修改.bochsrc配置文件，共有三处需要修改：\\
+(1) 添加ata1用作CD-ROM
+\begin{verbatim}
+ata1: enabled=1, ioaddr1=0x170, ioaddr2=0x370, irq=15
+\end{verbatim}
+(2) 增加ata1-master
+\begin{verbatim}
+ata1-master: type=cdrom, path="./obj/boot/boot.iso", status=inserted
+\end{verbatim}
+(3) 修改Boot方式
+\begin{verbatim}
+boot: cdrom
+\end{verbatim}
+修改后启动画面如Figure \ref{fig1}。
+\end{enumerate}
+\begin{figure}[!ht]
+\includegraphics[height=300pt,width=400pt]{cdrom.png}
+\caption{Booting from CD-ROM}\label{fig1}
+\end{figure}
+
+\section{Exercise 5}
+\fbox{\parbox{\textwidth}{
+Exercise 5.  Read about programming with pointers in C. The best reference for the C language is The C Programming Language  by Brian Kernighan and Dennis Ritchie (known as 'K\&R'). We recommend that students purchase this book (here is an  Amazon Link) or find one of  MIT's 8 copies.\\
+Read 5.1 (Pointers and Addresses) through 5.5 (Character Pointers and Functions) in K\&R.}}
+\begin{Large}答：\end{Large}
+本练习巩固C语言中关于指针的知识。
+
+\section{Exercise 6}
+\fbox{\parbox{\textwidth}{
+Exercise 6.  Reset the machine (exit bochs and start it again). Examine the 8 words of memory at 0x00100000 at the point the BIOS enters the boot loader, and then again at the point the boot loader enters the kernel. Why are they different? What is there at the second breakpoint? (You do not really need to use Bochs to answer this question. Just think.) 
+}}
+\begin{Large}答：\end{Large}
+从BIOS进入boot loader时内存0x00100000开始八个字的内容为:
+\begin{verbatim}
+<bochs:1> b 0x7c00
+<bochs:2> c
+(0) Breakpoint 1, 0x0x00007c00 in ?? ()
+Next at t=824243
+(0) [0x00007c00] 0000:7c00 (unk. ctxt): cli  ; fa
+<bochs:3> x /8wx 0x00100000
+[bochs]:
+0x00100000 <bogus+  0>:	0x00000000	0x00000000	0x00000000	0x00000000
+0x00100010 <bogus+ 16>:	0x00000000	0x00000000	0x00000000	0x00000000
+\end{verbatim}
+从boot loader进入内核的时候八个字的内容为:
+\begin{verbatim}
+Next at t=847322
+(0) [0x0010000c] 0008:0x0010000c (unk. ctxt): 
+    mov word ptr ds:0x472, 0x1234 ; 66c705720400003412
+<bochs:9> x /8wx 0x00100000
+[bochs]:
+0x00100000 <bogus+   0>:	0x1badb002		0x00000003	0xe4524ffb		0x7205c766
+0x00100010 <bogus+  16>:	0x34000004	0x15010f12		0x0010f018		0x000010b8
+\end{verbatim}
+前后内容不一致是因为由BIOS进入内核时还没把内核读进来，而由boot loader进入内核时已经把内核读进来了，此处存的是内核的内容。经过与obj/kern.asm对比内存中的指令与内核指令相同。
+
+
+\section{Exercise 7}
+\fbox{\parbox{\textwidth}{
+Exercise 7.  Trace through the first few instructions of the boot loader again and identify the first instruction that would "break" or otherwise do the wrong thing if you were to get the boot loader's link address wrong. Then change the link address in boot/Makefrag  to something wrong, run gmake clean, recompile lab1 with gmake, and trace into the boot loader again to see what happens. Don't forget to change the link address back afterwards! 
+}}
+\begin{Large}答：\end{Large}
+如果把boot loader的连接地址设置为错误的，那么出错的位置是当GDT表设置好后执行ljmp的地方。
+此时用段选择符在GDT表查询时会得到错误的地址，即：boot/boot.S中的以下指令：
+\begin{verbatim}
+lgdt    gdtdesc
+movl    %cr0, %eax
+orl     $CR0_PE_ON, %eax
+movl    %eax, %cr0
+ljmp    $PROT_MODE_CSEG, $protcseg
+\end{verbatim}
+
+\section{Exercise 8}
+\fbox{\parbox{\textwidth}{
+Exercise 8.  Use Bochs to trace into the JOS kernel and find where the new virtual-to-physical mapping takes effect. Then examine the Global Descriptor Table (GDT) that the code uses to achieve this effect, and make sure you understand what's going on.\\
+What is the first instruction after the new mapping is established that would fail to work properly if the old mapping were still in place? Comment out or otherwise intentionally break the segmentation setup code in kern/entry.S, trace into it in Bochs, and see if you were right. 
+}}
+\begin{Large}答：\end{Large}
+GDT表生效的指令为：
+\begin{verbatim}
+lgdt	RELOC(mygdtdesc)
+\end{verbatim}
+lgdt RELOC(mygdtdesc)语句读进来GDT表值，但是接下来的几条指令均是段内寻址，即通过eip的增加来寻下一条指令，当执行ljmp \$CODE\_SEL,\$relocated时，根据段选择符在GDT表找到实际的段值，然后再和偏移地址相加得到线性地址。\\
+在lab1 中要把0xf0000000映射成0x00000000，只需查表使之得到段基值为0x1000000即可，因为0xf0000000 + 0x10000000 = 0x00000000。\\
+修改GDT表使映射规则错的话，第一条出错的指令是在ljmp	\$CODE\_SEL,\$relocated，将会跳转到错误位置（根据GDT表修改的值而异）。
+
+\section{Exercise 9}
+\fbox{\parbox{\textwidth}{
+Exercise 9.  We have omitted a small fragment of code - the code necessary to print octal numbers using patterns of the form "\%o". Find and fill in this code fragment. 
+}}
+\begin{Large}答：\end{Large}
+补全打印八进制的代码为：
+\begin{verbatim}
+//putch('X', putdat);
+//putch('X', putdat);
+//putch('X', putdat);
+//break;
+num = getuint(&ap, lflag);
+base = 8;
+goto number;
+\end{verbatim}
+原来的启动画面为：
+\begin{verbatim}
+Booting from Hard Disk...
+6828 decimal is XXX octal!
+\end{verbatim}
+修改完，重新make，启动bochs后，得到启动画面提示信息：
+\begin{verbatim}
+Booting from Hard Disk...
+6828 decimal is 15254 octal!
+\end{verbatim} 
+
+\fbox{\parbox{\textwidth}{
+Be able to answer the following questions: 
+1.Explain the interface between printf.c and console.c. Specifically, what function does console.c export? How is this function used by printf.c? 
+}}
+\begin{Large}答：\end{Large}
+printf.c调用console的cputchar(int c)函数；console.c输出的功能为打印一个字符到屏幕。printf.c扩充了这个功能，增加了一个变量int *cnt来计数。并且提供两个函数vcprintf()和cprintf()，前者提供指定参数的调用，后者提供无限参数形式。\\
+
+\fbox{\parbox{\textwidth}{
+2.Explain the following from console.c:\\
+1      if (crt\_pos >= CRT\_SIZE) \{\\
+2              int i;\\
+3              memcpy(crt\_buf, crt\_buf + CRT\_COLS, (CRT\_SIZE - CRT\_COLS) * sizeof(uint16\_t));\\
+4              for (i = CRT\_SIZE - CRT\_COLS; i < CRT\_SIZE; i++)\\
+5                      crt\_buf[i] = 0x0700 | ' ';\\
+6              crt\_pos -= CRT\_COLS;\\
+7      \}
+}}
+\begin{Large}答：\end{Large}
+//当屏幕光标所指位置大于屏幕大小时， \\
+//把当前的屏幕内容上移一行，并把屏幕最后一行置为空白
+\begin{verbatim}
+	if (crt_pos >= CRT_SIZE) {
+		int i;
+\end{verbatim}
+\indent //把屏幕第二行开始到CRT\_ROWS-1（即第24行）的内容复制到缓冲
+		\begin{verbatim}
+		memmove(crt_buf, crt_buf + CRT_COLS, 
+		   (CRT_SIZE - CRT_COLS) * sizeof(uint16_t));
+		\end{verbatim}
+\indent //把最后一行置为空白
+		\begin{verbatim}
+		for (i = CRT_SIZE - CRT_COLS; i < CRT_SIZE; i++)
+			crt_buf[i] = 0x0700 | ' ';
+		\end{verbatim}
+\indent //重新定位新的光标位置
+		\begin{verbatim}
+		crt_pos -= CRT_COLS;
+	}
+	\end{verbatim}
+	
+
+\fbox{\parbox{\textwidth}{
+3.For the following questions you might wish to consult the notes for Lecture 2. These notes cover GCC's calling convention on the x86. \\
+Trace the execution of the following code step-by-step: \\
+int x = 1, y = 3, z = 4;\\
+cprintf("x \%d, y \%x, z \%d\textbackslash n", x, y, z);\\
+In the call to cprintf(), to what does fmt point? To what does ap point? \\
+List (in order of execution) each call to cons\_putc, va\_arg, and vcprintf. For cons\_putc, list its argument as well. For va\_arg, list what ap points to before and after the call. For vcprintf list the values of its two arguments. 
+}}
+\begin{Large}答：\end{Large}
+fmt指向字符串”x \%d, y \%x, \%d n”，而ap指向可变参数表x地址。 \\
+三个函数调用关系和顺序为（函数括号中给出了题目要求求的信息）： \\
+vcprintf(fmt = “x \%d, y \%x, z \%d\textbackslash n”, ap = x地址) \\
+=> cons\_putc('x') => cons\_putc(' ') \\
+=> va\_arg(调用前ap=x地址,调用后ap＝y地址) \\
+=> cons\_putc('1') => cons\_putc(',') \\
+=> cons\_putc(' ') => cons\_putc('y') \\
+=> cons\_putc(' ') \\
+=> va\_arg(调用前ap=y地址，调用后ap=z地址) \\
+=> cons\_putc('3') => cons\_putc(',') \\
+=> cons\_putc(' ') => cons\_putc('z') \\
+=> cons\_putc(' ') \\
+=> va\_arg(调用前ap=z地址，调用后ap=unknown) \\
+=> cons\_putc('4') => cons\_putc('\textbackslash') \\
+=> cons\_putc('\textbackslash n') \\
+
+
+
+\fbox{\parbox{\textwidth}{
+4.Run the following code.\\
+    unsigned int i = 0x00646c72;\\
+    cprintf("H\%x Wo\%s", 57616, \&i);\\
+What is the output? Explain how this output is arrived out in the step-by-step manner of the previous exercise.\\
+The output depends on that fact that the x86 is little-endian. If the x86 were instead big-endian what would you set i to in order to yield the same output? Would you need to change 57616 to a different value? 
+}}
+\begin{Large}答：\end{Large}
+得到的结果为He110 World\\
+在打印时，57616（0xE110）被当作十六进制数字打出，则输出e110；而x86使用小尾存储，\&i(i = 0x00646c72的指针)被当作字符串（即char*）打印时读出来的值为(0x726c6400)对应ASCII码表为(114 108 100 0，字符为r、l、d、字符串结束符)，所以打印出来是rld，综上可以得到结果为He110 World。\\
+流程分析：\\
+vcprintf(fmt = "H\%x Wo\%s", ap = 57616存储地址)\\
+=> cons\_putc('H')\\
+=> va\_arg(调用前ap=57616地址,调用后ap＝i地址)\\
+=> cons\_putc('e') => cons\_putc('1')\\
+=> cons\_putc('1') => cons\_putc('0')\\
+=> cons\_putc(' ') => cons\_putc('W')\\
+=> cons\_putc('o')\\
+=> va\_arg(调用前ap=i地址，调用后ap=unknown)\\
+=> cons\_putc('r') => cons\_putc('l')\\
+=> cons\_putc('d') => cons\_putc('\textbackslash0')\\
+如果x86采用的是大尾存储，那么要得到(114 108 100 0)的ASCII码表则i的值要对应为0x726c6400。而57616的值不用改变。\\
+
+
+\fbox{\parbox{\textwidth}{
+5.In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen? 
+    cprintf("x=\%d y=\%d", 3);
+}}
+\begin{Large}答：\end{Large}
+将会打出一个不确定的值。ap指向va\_list可变参数表地址，当打印完x=％d时，ap调用前指向参数3的地址，调用后将会指向一个不确定的地址。因此会得到y=不确定的值。
+\\
+
+\fbox{\parbox{\textwidth}{
+6.Let's say that GCC changed its calling convention so that it pushed arguments on the stack in declaration order, so that the last argument is pushed last. How would you have to change cprintf or its interface so that it would still be possible to pass it a variable number of arguments? 
+}}
+\begin{Large}答：\end{Large}
+假如GCC调用规范为先声明先入栈的话，那么为了传值正确可以从两种方法改进：\\
+1、得到可变参数表时，先预扫描一遍入栈的参数得到其个数，而后将根据得到的信息其变为可以随机访问的数组，使用参数传值时采取从栈底开始读取的方法；\\
+2、由于是先声明先入栈，可以在压完栈（记为S）之后另外使用一个栈（记为S‘），把S的内容弹出到S’去，再在S‘中进行传值操作，这样可以得到正确的结果。\\
+
+\section{Challenge 2: Colorful Console!}
+\fbox{\parbox{\textwidth}{
+Challenge! Enhance the console to allow text to be printed in different colors. The traditional way to do this is to make it interpret  ANSI escape sequences  embedded in the text strings printed to the console, but you may use any mechanism you like. There is plenty of information on the 6.828 reference page  and elsewhere on the web on programming the VGA display hardware. If you're feeling really adventurous, you could try switching the VGA hardware into a graphics mode and making the console draw text onto the graphical frame buffer. 
+}}
+\begin{Large}答：\end{Large}
+彩色打印的原理是在把字符输出到屏幕时作相应的格式输出控制即可。代码中实现把字符打印到屏幕的函数是cga\_putc(int c)，参数是int型，而ASCII码表值是0~127即8个二进制位，高八位即可用来存储颜色信息
+。在kern/console.c里面，有一段函数：\\
+\begin{verbatim}
+	// if no attribute given, then use black on white
+	if (!(c & ~0xFF))
+		c |= 0x0100;
+\end{verbatim}
+默认的颜色信息为01，即黑底灰字。实现打印彩色可以从这里修改，比如我们可以将数字和其他字母分开打印，则作如下改写：\\
+//新修改后的颜色打印,若为数字则用黑底绿色(颜色代码02)打印，否则用黑底淡蓝色(颜色代码03)打印
+\begin{verbatim}
+	if((c & 0xFF) >= '0' && (c & 0xFF) <= '9')
+		c |= 0x0200;
+	else c |= 0x0300;
+\end{verbatim}
+这样就实现了彩色打印。
+
+\section{Excercise 10}
+\fbox{\parbox{\textwidth}{
+Exercise 10.  Determine where the kernel initializes its stack, and exactly where in memory its stack is located. How does the kernel reserve space for its stack? And at which "end" of this reserved area is the stack pointer initialized to point to? }}
+\begin{Large}答：\end{Large}
+boot/boot.S中实现对堆栈的初始化，设置栈底：
+\begin{verbatim}
+   # Set the stack pointer
+	movl	$(bootstacktop),%esp
+	# now to C code
+	call	i386_init
+\end{verbatim}
+后面关于bootstacktop的定义：
+\begin{verbatim}
+.data
+	.globl	vpt
+	.set	vpt, VPT
+	.globl	vpd
+	.set	vpd, (VPT + SRL(VPT, 10))
+# boot stack
+	.p2align	PGSHIFT		# force page alignment
+	.globl		bootstack
+\end{verbatim}
+      //定义bootstack为全局变量
+\begin{verbatim}
+bootstack:
+	.space		KSTKSIZE
+\end{verbatim}
+    //保存KSTKSIZE大小的空间，并且全部初始化为0，memlayout.h中定义\#define KSTKSIZE	
+\begin{verbatim}
+           (8*PGSIZE)   		// size of a kernel stack
+\end{verbatim}
+//PGSIZE 在mmu.h中定义为\#define PGSIZE		4096\\
+因此，Trace bochs到此处可以得到栈在内存中的位置为：0xf010f000，根据GDT表映射，实际内存中的位置应该为0x0010f000~0x0010f000-KSTKSIZE(即8*4096=0x8000)即为：0x0010f000~0x00107000。
+则kernel为stack预留了KSTKSIZE的空间。初始化的栈顶栈底均为0x0010f000（虚拟地址0xf010f000）。
+
+\section{Excercise 11}
+\fbox{\parbox{\textwidth}{
+Exercise 11.  To become familiar with the C calling conventions on the x86, find the address of the test\_backtrace function in obj/kern/kernel.asm, set a breakpoint there in Bochs, and examine what happens each time it gets called after the kernel starts. There are two ways you can set this breakpoint: with the b command and a physical address, or with the vb command, a segment selector (use 8 for the code segment), and a virtual address. How many 32-bit words does each recursive nesting level of test\_backtrace push on the stack, and what are those words? }}
+\begin{Large}答：\end{Large}
+test\_backtrace的声明如下，根据GCC的调用规范，对程序做了一些注释：\\
+// Test the stack backtrace function (lab 1 only)\\
+void test\_backtrace(int x)\\
+{\\
+f01000dd:	55                   	push   \%ebp\\
+        //保存旧的ebp值，将其压入栈\\
+f01000de:	89 e5                	mov    \%esp,\%ebp\\
+    //设置新的ebp值，当前函数所属堆栈区的开始位置\\
+f01000e0:	53                   	push   \%ebx\\
+    //保存ebx内容，将其入栈，接下来要用到这个寄存器\\
+f01000e1:	83 ec 14             	sub    \$0x14,\%esp\\
+    //为函数预留5*4的局部空间\\
+f01000e4:	8b 5d 08             	mov    0x8(\%ebp),\%ebx\\
+   //将变量x的值赋给ebx\\
+	cprintf("entering test\_backtrace \%d\textbackslash n", x);\\
+f01000e7:	89 5c 24 04          	mov    \%ebx,0x4(\%esp) \\ 
+ //将ebx赋值给离栈顶4个字节的地址，符合GCC调用规范后声明先入栈的原则\\
+f01000eb:	c7 04 24 32 17 10 f0 	movl   \$0xf0101732,(\%esp)\\
+   //将要打印的东西地址放入栈顶\\
+f01000f2:	e8 74 08 00 00       	call   f010096b <cprintf>\\
+   //调用cprintf函数，上两条语句存的两个变量作为其参数\\
+	if (x > 0)\\
+f01000f7:	85 db                	test   \%ebx,\%ebx\\
+  //判断跳转条件\\
+f01000f9:	7e 0f                	jle    f010010a <test\_backtrace+0x2d>\\
+  //符合进入递归调用则递归\\
+		test\_backtrace(x-1);\\
+f01000fb:	8d 43 ff             	lea    -0x1(\%ebx),\%eax\\
+    //将变量x减去1赋值给eax\\
+f01000fe:	89 04 24             	mov    \%eax,(\%esp)\\
+   //用新的变量x值覆盖栈顶的元素\\
+f0100101:	e8 d7 ff ff ff       	call   f01000dd <test\_backtrace>\\
+   //递归调用本身\\
+	else mon\_backtrace(0, 0, 0);\\
+其运行过程中，test\_backtrace共调用6次，其前两次的堆栈示意图如下，其余类推：\\
+第一次调用时堆栈示意图：\\
+\begin{tabular}{|l|}
+\hline
+arg: x = 5\\
+\hline
+转移地址L = 0xf01000dd\\
+\hline
+旧ebp: 0xf010eff8\\
+\hline
+ebx = 0x10094\\
+\hline
+ \\
+\hline
+ \\
+\hline
+ \\
+\hline
+参数2: x\\
+\hline
+参数1: 要打印的内容\\
+\hline
+esp指向栈顶\\
+\hline
+\end{tabular}
+
+第二次调用时堆栈图：\\
+\begin{tabular}{|l|}
+\hline
+arg: x = 5\\
+\hline
+转移地址L = 0xf01000dd\\
+\hline
+旧ebp: 0xf010eff8\\
+\hline
+ebx = 0x10094\\
+\hline
+ \\
+\hline
+ \\
+\hline
+ \\
+\hline
+参数2: x\\
+\hline
+arg: x=4\\
+\hline
+转移地址L\\
+\hline
+旧ebp\\
+\hline
+ebx\\
+\hline
+ \\
+\hline
+ \\
+\hline
+ \\
+\hline
+参数2: \\
+\hline
+参数1：\\
+\hline
+ebp所指向\\
+\hline
+\end{tabular}
+
+\section{Excercise 12}
+\fbox{\parbox{\textwidth}{
+Exercise 12.  Implement the backtrace function as specified above. Use the same format as in the example, since otherwise the grading script will be confused. When you think you have it working right, run gmake grade to see if its output conforms to what our grading script expects, and fix it if it doesn't. After you have handed in your Lab 1 code, you are welcome to change the output format of the backtrace function any way you like. }}
+\begin{Large}答：\end{Large}
+实际上，在entry.S中定义了ebp的初始值，而后开始调用，因此当ebp值为0时代表backtrace终止的时候。
+\begin{verbatim}
+	# Clear the frame pointer register (EBP)
+	# so that once we get into debugging C code,
+	# stack backtraces will be terminated properly.
+	movl	$0x0,%ebp			# nuke frame pointer
+
+    # Set the stack pointer
+	movl	$(bootstacktop),%esp
+	# now to C code
+	call	i386_init
+\end{verbatim}
+而由exercise 11可知到怎么获得调用者的ebp, eip, args的内容，因为如下图所示：\\
+\begin{tabular}{|l|}
+\hline
+arg 5 = ebp + 24 \\
+\hline
+arg 4 = ebp + 20 \\
+\hline
+arg 3 = ebp + 16 \\
+\hline
+arg 2 = ebp + 12 \\
+\hline
+arg 1 = ebp + 8 \\
+\hline
+转移地址L = ebp+4 \\
+\hline
+当前函数堆栈起始位置ebp \\
+\hline
+\end{tabular}\\
+知道各个参数的地址之后，把结果读出来打印即可。backtrace如Figure \ref{fig2}所示。
+\begin{figure}[!ht]
+\includegraphics[height=280pt,width=400pt]{backtrace.png}
+\caption{Making grade}\label{fig2}
+\end{figure}
+
+\section{补充作业}
+\fbox{\parbox{\textwidth}{
+作业:写出此时的GDT表的有效表项(将要调用前),并说明在bootmain执行时是如何寻址代码段和数据段的(即此时段式寻址是如何计算的)。}}
+\begin{Large}答：\end{Large}
+此时GDT表的有效表项为：
+\begin{verbatim}
+Global Descriptor Table (0x00007c4c):
+GDT[0x00]=??? descriptor hi=00000000, lo=00000000
+GDT[0x01]=Code segment, linearaddr=00000000, len=fffff * 4Kbytes, 
+    Execute/Read, 32-bit addrs
+GDT[0x02]=Data segment, linearaddr=00000000, len=fffff * 4Kbytes, 
+    Read/Write, Accessed
+\end{verbatim}
+bootmain执行时已经进入32位保护模式，因此段式寻址首先根据段寄存器的高13位用做访问段描述符结构的下标，与GDT表的基址相加得到描述表项的起始地址，再将得到的地址与偏移量相加便得到地址。但是此时GDT表项代码段与数据段的描述符均为0，因此地址经过寻址后不变，只是为了进入32位保护模式需要设置GDT表。\\
+
+\fbox{\parbox{\textwidth}{
+lgdt RELOC(mygdtdesc)一句中,RELOC代表什么,为什么要进行这个转换？}}
+\begin{Large}答：\end{Large}
+RELOC(x)将x从链接地址映射到物理地址，即x的加载地址，根据RELOC的定义就是减去KERNBASE。因为内核被加载到物理地址1M以上的地方，需要把高地址的链接地址映射到低地址，所以要进行这个转换。\\
+
+\fbox{\parbox{\textwidth}{
+画出lgdt RELOC(mygdtdesc)之后GDT表的有效表项。分析在lgdt RELOC(mygdtdesc)前后GDT表的变化,以及这之后(到打开页管理(lab2)之前)的内存寻址方式(即这时候是如何利用段式管理寻址的)}}
+\begin{Large}答：\end{Large}
+设断点跟踪得到GDT表为：
+\begin{verbatim}
+Global Descriptor Table (0x0010f000):
+GDT[0x00]=??? descriptor hi=00000000, lo=00000000
+GDT[0x01]=Code segment, linearaddr=10000000, len=fffff * 4Kbytes, 
+    Execute/Read, 32-bit addrs
+GDT[0x02]=Data segment, linearaddr=10000000, len=fffff * 4Kbytes, 
+    Read/Write
+\end{verbatim}
+lgdt RELOC(mygdtdesc)前GDT表如第一题所示，用的是boot loader的临时GDT表，后则如上所示，进入内核后需要设置新的GDT表。此后的内存寻址方式为address + KERNBASE。\\
+
+\fbox{\parbox{\textwidth}{
+找到以下这些位置并练习使用Bochs在以下位置用vb,lb,pb命令下断点,说明你这样下断点的理由,并测试你下的断点是否成功：\\
+1. boot/boot.S的起始位置\\
+2. boot/main.c中bootmain函数的起始位置\\
+3. kern/entry.S的起始位置\\
+4. kern/init.c中i386\_init()函数的起始位置
+}}
+\begin{Large}答：\end{Large}
+根据反汇编代码和指令的执行顺序可得：\\
+1. pb 0x7c00\\
+2. pb 0x7d22\\
+3. pb 0x00100000\\
+4. pb 0x0010013a\\
+
+\end{document}
+

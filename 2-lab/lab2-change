@@ -1,0 +1,668 @@
+仅在 lab2-ch: bochs.log
+仅在 lab2-ch: bochs.out
+diff -ur lab2/.bochsrc lab2-ch/.bochsrc
+--- lab2/.bochsrc	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/.bochsrc	2010-03-11 13:50:24.000000000 +0800
+@@ -270,6 +270,7 @@
+ #   ata3-slave:  type=cdrom, path=iso.sample, status=inserted
+ #=======================================================================
+ ata0-master: type=disk, mode=flat, path="./obj/kern/bochs.img", cylinders=100, heads=10, spt=10
++#ata1-master: type=cdrom, path="./obj/boot/boot.iso", status=inserted
+ 
+ #=======================================================================
+ # BOOT:
+@@ -286,6 +287,7 @@
+ #=======================================================================
+ #boot: floppy
+ boot: disk
++#boot: cdrom
+ 
+ #=======================================================================
+ # CLOCK:
+diff -ur lab2/boot/boot.S lab2-ch/boot/boot.S
+--- lab2/boot/boot.S	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/boot/boot.S	2010-03-17 16:52:54.000000000 +0800
+@@ -25,6 +25,7 @@
+   #   For backwards compatibility with the earliest PCs, physical
+   #   address line 20 is tied low, so that addresses higher than
+   #   1MB wrap around to zero by default.  This code undoes this.
++  # 打开A20地址线,A20作用是使地址线20以上的线全部取0
+ seta20.1:
+   inb     $0x64,%al               # Wait for not busy
+   testb   $0x2,%al
+@@ -52,6 +53,7 @@
+   
+   # Jump to next instruction, but in 32-bit code segment.
+   # Switches processor into 32-bit mode.
++  # CS只能通过长跳来修改，因此执行完下面的长跳后切到32位保护模式
+   ljmp    $PROT_MODE_CSEG, $protcseg
+ 
+   .code32                     # Assemble for 32-bit mode
+diff -ur lab2/boot/Makefrag lab2-ch/boot/Makefrag
+--- lab2/boot/Makefrag	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/boot/Makefrag	2010-03-17 17:12:48.000000000 +0800
+@@ -29,4 +29,3 @@
+ 	$(V)$(OBJDUMP) -S $@.out >$@.asm
+ 	$(V)$(OBJCOPY) -S -O binary $@.out $@
+ 	$(V)perl boot/sign.pl $(OBJDIR)/boot/boot
+-
+diff -ur lab2/kern/console.c lab2-ch/kern/console.c
+--- lab2/kern/console.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/console.c	2010-03-17 20:10:41.000000000 +0800
+@@ -148,8 +148,13 @@
+ cga_putc(int c)
+ {
+ 	// if no attribute given, then use black on white
+-	if (!(c & ~0xFF))
+-		c |= 0x0700;
++	//if (!(c & ~0xFF))
++		//c |= 0x0700;
++
++	//新修改后的颜色打印,若为数字则用黑底绿色(颜色代码02)打印，否则用黑底淡蓝色(颜色代码03)打印
++	if((c & 0xFF) >= '0' && (c & 0xFF) <= '9')
++		c |= 0x0200;
++	else c |= 0x0300;
+ 
+ 	switch (c & 0xff) {
+ 	case '\b':
+@@ -177,9 +182,13 @@
+ 	}
+ 
+ 	// What is the purpose of this?
++	// 处理当光标超出屏幕大小的情况
+ 	if (crt_pos >= CRT_SIZE) {
+ 		int i;
+ 
++		// 先把第2到最后一行的内容复制到第1~CRT_ROWS-1中
++		// 再把最后一行的内容变为黑底白字的空白
++		// 再把光标放置上跳一行
+ 		memmove(crt_buf, crt_buf + CRT_COLS, (CRT_SIZE - CRT_COLS) * sizeof(uint16_t));
+ 		for (i = CRT_SIZE - CRT_COLS; i < CRT_SIZE; i++)
+ 			crt_buf[i] = 0x0700 | ' ';
+diff -ur lab2/kern/entry.S lab2-ch/kern/entry.S
+--- lab2/kern/entry.S	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/entry.S	2010-03-17 18:06:03.000000000 +0800
+@@ -41,6 +41,8 @@
+ 
+ .globl		_start
+ _start:
++	# 进入内核的地址为0x001000c，使用vb 0x08:0x001000c(为什么seg是0x08?)
++	# 或者pb 0x001000c可以跟踪到此处。
+ 	movw	$0x1234,0x472			# warm boot
+ 
+ 	# Establish our own GDT in place of the boot loader's temporary GDT.
+diff -ur lab2/kern/init.c lab2-ch/kern/init.c
+--- lab2/kern/init.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/init.c	2010-03-19 10:15:33.000000000 +0800
+@@ -24,7 +24,7 @@
+ 	// Can't call cprintf until after we do this!
+ 	cons_init();
+ 
+-	cprintf("6828 decimal is %o octal!\n", 6828);
++	//cprintf("6828 decimal is %o octal!\n", 6828);
+ 
+ 	// Lab 2 memory management initialization functions
+ 	i386_detect_memory();
+diff -ur lab2/kern/kdebug.c lab2-ch/kern/kdebug.c
+--- lab2/kern/kdebug.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/kdebug.c	2010-03-19 18:32:35.000000000 +0800
+@@ -181,7 +181,10 @@
+ 	//	Look at the STABS documentation and <inc/stab.h> to find
+ 	//	which one.
+ 	// Your code here.
+-
++	stab_binsearch(stabs, &lline, &rline, N_SLINE, addr);
++	if(lline > rline)
++		return -1;
++	else info->eip_line = stabs[lline].n_desc;
+ 	
+ 	// Search backwards from the line number for the relevant filename
+ 	// stab.
+@@ -199,7 +202,10 @@
+ 	// Set eip_fn_narg to the number of arguments taken by the function,
+ 	// or 0 if there was no containing function.
+ 	// Your code here.
+-
++	info->eip_fn_narg = 0;
++	lfun++;
++	while (stabs[lfun++].n_type == N_PSYM)
++		info->eip_fn_narg++;
+ 	
+ 	return 0;
+ }
+仅在 lab2-ch/kern: kdebug.c~
+diff -ur lab2/kern/monitor.c lab2-ch/kern/monitor.c
+--- lab2/kern/monitor.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/monitor.c	2010-03-20 14:06:56.000000000 +0800
+@@ -10,9 +10,18 @@
+ #include <kern/console.h>
+ #include <kern/monitor.h>
+ #include <kern/kdebug.h>
++#include <kern/pmap.h>
+ 
+ #define CMDBUF_SIZE	80	// enough for one VGA text line
+ 
++int mon_show_map(int argc, char **argv, struct Trapframe *tf);
++int mon_set_perm(int argc, char **argv, struct Trapframe *tf);
++int mon_dump_va(int argc, char **argv, struct Trapframe *tf);
++int mon_dump_pa(int argc, char **argv, struct Trapframe *tf);
++int mon_alloc_page(int argc, char **argv, struct Trapframe *tf);
++int mon_free_page(int argc, char **argv, struct Trapframe *tf);
++int mon_page_status(int argc, char **argv, struct Trapframe *tf);
++
+ 
+ struct Command {
+ 	const char *name;
+@@ -24,7 +33,16 @@
+ static struct Command commands[] = {
+ 	{ "help", "Display this list of commands", mon_help },
+ 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
++	{"backtrace", "Trace the information of registers in function call", mon_backtrace} ,
++	{"show_map", "Show mappings from virtual address to physical page",  mon_show_map }, 
++	{"set_perm", "Set permission for pages", mon_set_perm },
++	{"dump_va", "Dump value of vitual address", mon_dump_va },
++	{"dump_pa", "Dump value of physical address", mon_dump_pa },
++	{"alloc_page", "Allocate a page", mon_alloc_page },
++	{"page_status", "Query page status", mon_page_status },
++	{"free_page", "Free a page", mon_free_page }
+ };
++
+ #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
+ 
+ unsigned read_eip();
+@@ -60,10 +78,220 @@
+ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
+ {
+ 	// Your code here.
++	//code for printing registers ebp, eip and args
++	/* lab1 backtrace
++	cprintf("Stack backtrace:\n");
++	uint32_t ebp = read_ebp();
++	//format :
++	//ebp f0109e58  eip f0100a62  args 00000001 f0109e80 f0109e98 f0100ed2 00000031
++	while(ebp != 0){
++		cprintf("ebp %08x  eip %08x  args %08x %08x %08x %08x %08x\n", 
++		ebp, *(uint32_t *)(ebp + 4),
++			 *(uint32_t *)(ebp + 8), 
++			 *(uint32_t *)(ebp + 12), 
++			 *(uint32_t *)(ebp + 16), 
++			 *(uint32_t *)(ebp + 20), 
++			 *(uint32_t *)(ebp + 24));
++		ebp = *(uint32_t *) ebp;  // get caller
++	}
++	return 0;*/
++
++	//lab 2 backtrace
++	cprintf("Stack backtrace\n");
++	uint32_t *ebp = (uint32_t *)read_ebp();
++	uint32_t eip = read_eip();
++	char function_name[50];
++	int i;
++	struct Eipdebuginfo info;
++	while(ebp != NULL) {
++		debuginfo_eip(eip, &info);
++		strncpy(function_name, info.eip_fn_name, info.eip_fn_namelen);
++		function_name[info.eip_fn_namelen] = '\0';
++		cprintf("%s:%d: %s+%x\n",
++			info.eip_file,
++			info.eip_line,
++			function_name,
++			eip - info.eip_fn_addr);
++		cprintf("  ebp %08x  eip %08x  args %08x %08x %08x %08x %08x\n",
++			ebp, eip, ebp[2], ebp[3], ebp[4], ebp[5], ebp[6]);
++		eip = ebp[1];
++		ebp = (uint32_t *)(*ebp);
++	}
++	return 0;
++}
++
++//----------------------Chanllenge----------------
++
++char char_map(uintptr_t i){
++	if(i == 0) return '0';
++	else return '1';
++}
++
++int
++mon_show_map(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 3){
++		cprintf("	Wrong arguments.\n	Formation \"showmappings begin_address end_address\" expected.\n");
++		return 0;
++	}
++	uintptr_t begin_addr, end_addr, va;
++	begin_addr = strtol(argv[1], NULL, 0);
++	end_addr = strtol(argv[2], NULL, 0);
++	//align addresses to page size
++	if((begin_addr & (PGSIZE - 1)) != 0){
++		begin_addr -= PGSIZE;
++		begin_addr &= ~(PGSIZE - 1);
++	}
++	if((end_addr & (PGSIZE - 1)) != 0){
++		end_addr += PGSIZE;
++		end_addr &= ~(PGSIZE - 1);
++	}
++	cprintf("	vir_addr   phy_addr   P W U PWT PCD A D PS MBZ AVAIL\n"); 
++	for(va = begin_addr; va <= end_addr; va += PGSIZE){
++		pde_t pde = vpd[PDX(va)];
++		if((pde & PTE_P) == 0){
++			cprintf("	UNMAPPED ADDRESS 0x%08x.\n", (va & 0xFFFFF000));
++			continue;
++		}
++		pte_t pte = vpt[PDX(va) * 1024 + PTX(va)];
++		if((pte & PTE_P) == 0){
++			cprintf("	UNMAPPED ADDRESS 0x%08x.\n", (va & 0xFFFFF000));
++			continue;
++		}
++		cprintf("	0x%08x 0x%08x ", (va & 0xFFFFF000), PTE_ADDR(pte));
++		cprintf("%c ", char_map(pte & PTE_P));
++		cprintf("%c ", char_map(pte & PTE_W));
++		cprintf("%c ", char_map(pte & PTE_U));
++		cprintf("%c   ", char_map(pte & PTE_PWT));
++		cprintf("%c   ", char_map(pte & PTE_PCD));
++		cprintf("%c ", char_map(pte & PTE_A));
++		cprintf("%c ", char_map(pte & PTE_D));
++		cprintf("%c  ", char_map(pte & PTE_PS));
++		cprintf("%02x  ", (pte & PTE_MBZ) >> 7);
++		cprintf("%03x  \n", (pte & PTE_AVAIL) >> 9);
++	}
++	return 0;
++}
++
++int
++mon_set_perm(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 4){
++		cprintf("	Wrong arguments.\n	Formation \"showmappings begin_address end_address\" expected.\n");
++		return 0;
++	}
++	uintptr_t begin_addr, end_addr, va, perm;
++	begin_addr = strtol(argv[1], NULL, 0);
++	end_addr = strtol(argv[2], NULL, 0);
++	perm = strtol(argv[3], NULL, 0);
++	if(perm != 0) perm = 1;
++	//align addresses to page size
++	if((begin_addr & (PGSIZE - 1)) != 0){
++		begin_addr -= PGSIZE;
++		begin_addr &= ~(PGSIZE - 1);
++	}
++	if((end_addr & (PGSIZE - 1)) != 0){
++		end_addr += PGSIZE;
++		end_addr &= ~(PGSIZE - 1);
++	}
++	for(va = begin_addr; va <= end_addr; va += PGSIZE){
++		pde_t pde = vpd[PDX(va)];
++		if((pde & PTE_P) == 0){
++			cprintf("	UNMAPPED ADDRESS 0x%08x.\n", (va & 0xFFFFF000));
++			continue;
++		}
++		pte_t *pte = (pte_t *)(&vpt[PDX(va) * 1024 + PTX(va)]);
++		if(((*pte) & PTE_P) == 0){
++			cprintf("	UNMAPPED ADDRESS 0x%08x.\n", (va & 0xFFFFF000));
++			continue;
++		}
++		if(perm == 0){
++			(*pte) &= 0xfffffffb;
++		}
++		else (*pte) |= 4;
++	}
+ 	return 0;
+ }
+ 
++int mon_dump_va(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 3){
++		cprintf("	Wrong arguments.\n	Formation \"showmappings begin_address end_address\" expected.\n");
++		return 0;
++	}
++	uintptr_t begin_addr, end_addr, va;
++	begin_addr = strtol(argv[1], NULL, 0);
++	end_addr = strtol(argv[2], NULL, 0);
++	for(va = begin_addr; va <= end_addr; va += 4){
++		if(va >= KERNBASE && va <= 0xffffffff)
++			cprintf("	va: 0x%08x	value: %08x\n", va, (*(uint32_t*)va));
++	}
++	return 0;
++}
++
++int mon_dump_pa(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 3){
++		cprintf("	Wrong arguments.\n	Formation \"showmappings begin_address end_address\" expected.\n");
++		return 0;
++	}
++	uintptr_t begin_addr, end_addr, pa;
++	begin_addr = strtol(argv[1], NULL, 0);
++	end_addr = strtol(argv[2], NULL, 0);
++	for(pa = begin_addr; pa <= end_addr; pa += 4){
++		if(pa >= 0 && pa <= 0xfffffff)
++			cprintf("	pa: 0x%08x	value: %08x\n", pa + KERNBASE, (*(uint32_t*)(pa + KERNBASE)));
++	}
++	return 0;
++}
++
++int 
++mon_alloc_page(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 1){
++		cprintf("	Wrong arguments.\n	Formation \"alloc_page\" expected.\n");
++		return 0;
++	}
++	struct Page *page;
++	if(page_alloc(&page) != 0){
++		cprintf("	Page allocate failed.\n");
++		return 0;
++	}
++	page->pp_ref++;
++	cprintf("	Page allocate successfully at 0x%x\n", page2pa(page));
++	return 0;
++}
+ 
++int
++mon_page_status(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 2){
++		cprintf("	Wrong arguments.\n	Formation \"page_status address\" expected.\n");
++		return 0;
++	}
++	struct Page* page;
++	uintptr_t pa = strtol(argv[1], NULL, 0);
++	page = pa2page(pa);
++	if(page->pp_ref != 0)
++		cprintf("	allocated\n");
++	else
++		cprintf("	free\n");
++	return 0;
++}
++
++int
++mon_free_page(int argc, char **argv, struct Trapframe *tf)
++{
++	if(argc != 2){
++		cprintf("	Wrong arguments.\n	Formation \"free_page address\" expected.\n");
++		return 0;
++	}
++	struct Page* page;
++	uintptr_t pa = strtol(argv[1], NULL, 0);
++	page = pa2page(pa);
++	page_decref(page);
++	return 0;
++}
+ 
+ /***** Kernel monitor command interpreter *****/
+ 
+仅在 lab2-ch/kern: monitor.c~
+仅在 lab2-ch/kern: monitor.c.orig
+diff -ur lab2/kern/pmap.c lab2-ch/kern/pmap.c
+--- lab2/kern/pmap.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/kern/pmap.c	2010-03-27 16:04:23.944188450 +0800
+@@ -18,7 +18,7 @@
+ // These variables are set in i386_vm_init()
+ pde_t* boot_pgdir;		// Virtual address of boot time page directory
+ physaddr_t boot_cr3;		// Physical address of boot time page directory
+-static char* boot_freemem;	// Pointer to next byte of free mem
++static char* boot_freemem;	// Pointer to next byte of free mem   --- char*为什么用来指向地址？
+ 
+ struct Page* pages;		// Virtual address of physical page array
+ static struct Page_list page_free_list;	// Free list of physical pages
+@@ -101,7 +101,8 @@
+ // If we're out of memory, boot_alloc should panic.
+ // This function may ONLY be used during initialization,
+ // before the page_free_list has been set up.
+-// 
++
++// 返回分配空间的虚拟地址，分配的空间没有进行初始化
+ static void*
+ boot_alloc(uint32_t n, uint32_t align)
+ {
+@@ -118,11 +119,13 @@
+ 
+ 	// LAB 2: Your code here:
+ 	//	Step 1: round boot_freemem up to be aligned properly
++	boot_freemem = ROUNDUP(boot_freemem, align);
+ 	//	Step 2: save current value of boot_freemem as allocated chunk
++	v = boot_freemem;	
+ 	//	Step 3: increase boot_freemem to record allocation
++	boot_freemem += n;
+ 	//	Step 4: return allocated chunk
+-
+-	return NULL;
++	return v;
+ }
+ 
+ // Set up a two-level page table:
+@@ -145,7 +148,7 @@
+ 	size_t n;
+ 
+ 	// Delete this line:
+-	panic("i386_vm_init: This function is not finished\n");
++	// panic("i386_vm_init: This function is not finished\n");
+ 
+ 	//////////////////////////////////////////////////////////////////////
+ 	// create initial page directory.
+@@ -174,6 +177,7 @@
+ 	// programs will get read-only access to the array as well.
+ 	// You must allocate the array yourself.
+ 	// Your code goes here: 
++	pages = boot_alloc(npage * sizeof(struct Page), PGSIZE);
+ 
+ 
+ 	//////////////////////////////////////////////////////////////////////
+@@ -197,7 +201,7 @@
+ 	//    - pages -- kernel RW, user NONE
+ 	//    - the read-only version mapped at UPAGES -- kernel R, user R
+ 	// Your code goes here:
+-
++	boot_map_segment(pgdir, UPAGES, PTSIZE, PADDR(pages), PTE_U | PTE_P);
+ 
+ 
+ 	//////////////////////////////////////////////////////////////////////
+@@ -205,9 +209,12 @@
+ 	// range of the stack, [KSTACKTOP-PTSIZE, KSTACKTOP), breaks into two
+ 	// pieces:
+ 	//     * [KSTACKTOP-KSTKSIZE, KSTACKTOP) -- backed by physical memory
+-	//     * [KSTACKTOP-PTSIZE, KSTACKTOP-KSTKSIZE) -- not backed => faults
++	//     * [KSTACKTOP-PTSIZE, KSTACKTOP-KSTKSIZE) -- not backed => faults 
++	//           --意味着不需要映射(或者随便映射到一个位置)，只需要改权限就行？
+ 	//     Permissions: kernel RW, user NONE
+ 	// Your code goes here:
++	boot_map_segment(pgdir, KSTACKTOP - KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
++	boot_map_segment(pgdir, KSTACKTOP - PTSIZE, PTSIZE - KSTKSIZE, 0, 0);
+ 
+ 	//////////////////////////////////////////////////////////////////////
+ 	// Map all of physical memory at KERNBASE. 
+@@ -217,6 +224,7 @@
+ 	// we just set up the amapping anyway.
+ 	// Permissions: kernel RW, user NONE
+ 	// Your code goes here: 
++	boot_map_segment(pgdir, KERNBASE, 0x10000000, 0, PTE_W);
+ 
+ 	// Check that the initial page directory has been set up correctly.
+ 	check_boot_pgdir();
+@@ -284,6 +292,7 @@
+         // if there's a page that shouldn't be on
+         // the free list, try to make sure it
+         // eventually causes trouble.
++	// 把每一个空闲页面对应的内核虚拟地址的前128位设置为151(0x97)？
+ 	LIST_FOREACH(pp0, &page_free_list, pp_link)
+ 		memset(page2kva(pp0), 0x97, 128);
+ 
+@@ -422,20 +431,36 @@
+ 	//  1) Mark page 0 as in use.
+ 	//     This way we preserve the real-mode IDT and BIOS structures
+ 	//     in case we ever need them.  (Currently we don't, but...)
++	int i;
++	LIST_INIT(&page_free_list);
++	pages[0].pp_ref = 1;
+ 	//  2) Mark the rest of base memory as free.
++	for(i = 1; i < IOPHYSMEM / PGSIZE; i++) {
++		pages[i].pp_ref = 0;
++		LIST_INSERT_HEAD(&page_free_list, &pages[i], pp_link);
++	}
+ 	//  3) Then comes the IO hole [IOPHYSMEM, EXTPHYSMEM).
+ 	//     Mark it as in use so that it can never be allocated.      
++	for(; i < EXTPHYSMEM / PGSIZE; i++) {
++		pages[i].pp_ref = 1;
++	}	
+ 	//  4) Then extended memory [EXTPHYSMEM, ...).
+ 	//     Some of it is in use, some is free. Where is the kernel?
+ 	//     Which pages are used for page tables and other data structures?
+-	//
+-	// Change the code to reflect this.
+-	int i;
+-	LIST_INIT(&page_free_list);
+-	for (i = 0; i < npage; i++) {
++	// 从EXTPHYSMEM/SIZE到PADDR(boot_freemem)/SIZE是内核部分
++	for(; i < PADDR(boot_freemem) / PGSIZE; i++) {
++		pages[i].pp_ref = 1;
++	}
++	for(; i < npage; i++) {
+ 		pages[i].pp_ref = 0;
+ 		LIST_INSERT_HEAD(&page_free_list, &pages[i], pp_link);
+ 	}
++	//
++	// Change the code to reflect this.
++	//for (i = 0; i < npage; i++) {
++	//	pages[i].pp_ref = 0;
++	//	LIST_INSERT_HEAD(&page_free_list, &pages[i], pp_link);
++	//}
+ }
+ 
+ //
+@@ -467,7 +492,15 @@
+ page_alloc(struct Page **pp_store)
+ {
+ 	// Fill this function in
+-	return -E_NO_MEM;
++	if(LIST_EMPTY(&page_free_list))
++		return -E_NO_MEM;
++	else {
++		struct Page * get_page = LIST_FIRST(&page_free_list);
++		LIST_REMOVE(get_page, pp_link);
++		page_initpp(get_page);
++		(*pp_store) = get_page;
++		return 0;
++	}
+ }
+ 
+ //
+@@ -478,6 +511,10 @@
+ page_free(struct Page *pp)
+ {
+ 	// Fill this function in
++	if(pp->pp_ref != 0) {
++		panic("a page should only be freed when its ref reaches 0.\n");
++	}
++	LIST_INSERT_HEAD(&page_free_list, pp, pp_link);
+ }
+ 
+ //
+@@ -508,7 +545,25 @@
+ pgdir_walk(pde_t *pgdir, const void *va, int create)
+ {
+ 	// Fill this function in
+-	return NULL;
++	if((pgdir[PDX(va)] & PTE_P) != 0) {
++		// 将得到的页目录项转换为物理地址再转换为内核虚拟地址，即得到页表的指针
++		return &(((pte_t *)KADDR(PTE_ADDR(pgdir[PDX(va)])))[PTX(va)]);
++	}
++	else {
++		if (create == 0)
++			return NULL;
++		else {
++			struct Page * new_page;
++			if(page_alloc(&new_page) != 0) 
++				return NULL;
++			new_page->pp_ref = 1;
++			// 对新的page table进行初始化，防止有的页表项的PTE_P位正好可能是1
++			memset(page2kva(new_page), 0, PGSIZE);
++			// 权限怎么设置比较合理？内核态需要修改页目录
++			pgdir[PDX(va)] = page2pa(new_page) | PTE_P | PTE_W;	
++			return &(((pte_t *)KADDR(PTE_ADDR(pgdir[PDX(va)])))[PTX(va)]);
++		}
++	}
+ }
+ 
+ //
+@@ -534,6 +589,16 @@
+ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm) 
+ {
+ 	// Fill this function in
++	pte_t * pte = pgdir_walk(pgdir, va, 1);
++	if(pte == NULL)
++		return -E_NO_MEM; 
++	if(page2pa(pp) != PTE_ADDR(*pte)) {
++		page_remove(pgdir, va);
++		*pte = page2pa(pp) | perm | PTE_P;
++		pp->pp_ref++;
++	}
++	else *pte |= perm | PTE_P;
++	tlb_invalidate(pgdir, va);
+ 	return 0;
+ }
+ 
+@@ -551,6 +616,12 @@
+ boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, physaddr_t pa, int perm)
+ {
+ 	// Fill this function in
++	size_t i;
++	pte_t * pte;
++	for(i = 0; i < size; i += PGSIZE) {
++		pte = pgdir_walk(pgdir, (void *)(la + i), 1);
++		(*pte) = (pa + i) | perm | PTE_P;
++	}
+ }
+ 
+ //
+@@ -567,7 +638,14 @@
+ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
+ {
+ 	// Fill this function in
+-	return NULL;
++	pte_t * pte = pgdir_walk(pgdir, va, 0);
++	if(pte == NULL)
++		return 0;
++	else if(pte_store != NULL)
++		(*pte_store) = pte;
++	if(*pte & PTE_P)
++		return pa2page(PTE_ADDR(*pte));
++	return 0;
+ }
+ 
+ //
+@@ -589,6 +667,13 @@
+ page_remove(pde_t *pgdir, void *va)
+ {
+ 	// Fill this function in
++	pte_t * pte;
++	struct Page * page = page_lookup(pgdir, va, &pte);
++	if(page == NULL)
++		return;
++	page_decref(page);
++	*pte = 0;
++	tlb_invalidate(pgdir, va);
+ }
+ 
+ //
+仅在 lab2-ch/kern: pmap.c~
+diff -ur lab2/lib/printfmt.c lab2-ch/lib/printfmt.c
+--- lab2/lib/printfmt.c	2007-09-12 22:06:25.000000000 +0800
++++ lab2-ch/lib/printfmt.c	2010-03-11 13:50:24.000000000 +0800
+@@ -207,9 +207,12 @@
+ 		// (unsigned) octal
+ 		case 'o':
+ 			// Replace this with your code.
+-			putch('X', putdat);
+-			putch('X', putdat);
+-			putch('X', putdat);
++			num = getuint(&ap, lflag);
++			base = 8;
++			goto number;
++			//putch('X', putdat);
++			//putch('X', putdat);
++			//putch('X', putdat);
+ 			break;
+ 
+ 		// pointer
+仅在 lab2-ch: obj
+仅在 lab2-ch: tags
