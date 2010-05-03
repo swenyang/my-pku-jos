@@ -1,0 +1,233 @@
+% about this file:
+% author: Swen, PKU
+% date: March 2010
+% TEX program = xelatex
+% cjk chinese needed
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[pinyin]{babel}
+\usepackage[cm-default]{fontspec}
+\usepackage{xunicode}
+\usepackage{xltxtra}
+\usepackage[center, pagestyles]{titlesec}
+
+%设置链接颜色，引入超链接包
+\usepackage[colorlinks,linkcolor=blue,bookmarksnumbered,bookmarksopen]{hyperref}
+
+%设置章节标题
+%\titleformat{command}[shape]{format}{label}{separate_length}{before}[after]
+\titleformat{\section}{\centering\Large\bfseries}{\S\,\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\S\, \thesubsection}{1em}{}
+\titleformat{\subsubsection}{\bfseries}{\S\, \thesubsubsection}{1em}{}
+
+%设置页眉页脚
+%\sethead[偶数页左页眉][偶数页中页眉][偶数页右页眉]
+%        [奇数页左页眉][奇数页中页眉][奇数页右页眉]
+%\setfoot类似
+\newpagestyle{main}{
+	\sethead{\small\S\,\thesection\quad\sectiontitle}{}{00748267 Swen}
+	\setfoot{}{- \thepage{} -}{} \headrule} %\footrule}
+\pagestyle{main}
+
+%设置字体
+%\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi_GB2312]{SimSun}
+\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi]{SimSun}
+\setsansfont[BoldFont=SimHei]{KaiTi}
+\setmonofont{NSimSun}
+
+%中文换行
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt minus 0.1pt
+
+%设置页面边距
+\addtolength{\voffset}{-30pt}
+\addtolength{\textheight}{55pt}
+
+%定义新命令exercise
+\newcommand{\exercise}[2]{
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise #1:#2\\
+\hline
+\end{tabular}
+\textit{\large{答：}}}
+
+\begin{document}
+%-------------我是华丽的正文分割线-------------------
+
+\centerline{\Huge{\textbf{操作系统实习lab 2实习报告}}}
+\rightline{\large{\textit{00748267 杨文新}}}
+\tableofcontents
+\thispagestyle{empty}
+
+\section{总体概述}
+本次lab主要是为设置保护模式下用户进程运行环境作一些准备工作，以使用户进程能够正常运行，并且使系统能够处理用户进程或内核产生的中断、异常、系统调用等。主要包含两部分：第一部分是建立数据结构管理用户进程，并设定IDT处理中断和异常；第二部分是处理缺页中断、断点异常和系统调用。其中比较重要的是理解x86的中断异常处理机制。\\
+本次lab中完成了所有的exercise，make grade 60/60和一个challenge。\\
+
+\section{lab问题回答}
+\subsection{Exercise 1}
+\exercise{1}{Modify i386\_vm\_init() in kern/pmap.c  to allocate and map the envs array. This array consists of exactly NENV instances of the Env structure, laid out consecutively in the kernel's virtual address space starting at address UENVS  (defined in inc/memlayout.h). You should allocate and map this array the same way as you did the pages array.}
+本部分需要做的有两部分：一是为envs数组分配物理空间，大小为NENV * sizeof(struct Env)，使用boot\_alloc函数可以方便实现；二是将[UENVS, UENVS + (sizeof(struct Env) * NENV)的线性地址映射到envs数组上，即envs对应的物理地址上，权限为用户可读不可写，使用boot\_map\_segment函数实现。\\
+
+\subsection{Exercise 2}
+\exercise{2}{完成env.c文件中的几个函数：env\_init(), env\_setup\_vm(), segment\_alloc(), load\_icode(), env\_create(), env\_run()。}
+lab中用来管理进程的env\_free\_list链表使用与lab 2中空闲物理页面链表相同的数据结构。JOS使用结构体Env来代表一个进程，熟悉Env的域和lab 2中页面操作的函数可以完成本部分的练习。总结Env结构体如下：\\
+\begin{tabular}{r|l p{\textwidth / 2}}
+\hline
+Env & Trapframe env\_tf & 用来保存和恢复处理中断时需要压栈的寄存器\\
+\hline
+& LIST\_ENTRY(Env) env\_link & 用来表示进程在空闲进程链表中的位置的一对指针\\
+\hline
+& u\_int env\_id & 进程标识ID\\
+\hline
+& u\_int env\_parent\_id & 创建该进程的进程id，即父进程\\
+\hline
+& u\_int env\_status & 进程状态，有三种取值\\
+& & ENV\_FREE 进程非活动状态，在空闲进程列表中\\
+& & ENV\_RUNNABLE 进程活动状态，等待进行\\
+& & ENV\_NOT\_RUNNABLE 进程处于等待其他事件的状态\\
+\hline
+& Pde * env\_pgdir & 进程页目录在内核虚拟地址的位置\\
+\hline
+& u\_int env\_cr3 & 进程页目录的物理地址\\
+\hline
+\end{tabular}
+\begin{itemize}
+\item env\_init()\\
+初始化envs中所有的Env结构，并加入空闲进程链表中。加入空闲进程链表中时从envs[NENV-1]开始，逆向添加。
+\item env\_setup\_vm()\\
+分配页目录给新的进程并且初始化进程空间中的内核部分，因为JOS中所有进程的内核部分都是一样的，即ULIM之上的部分。所做的就是要把内核空间与物理空间的映射关系复制到进程空间中，将内核空间的页目录复制到进程空间即可。\\
+\indent \textbf{memmove(e->env\_pgdir, boot\_pgdir, PGSIZE);}
+\item segment\_alloc()\\
+为进程分配和映射物理空间，将给定的va和len对齐后逐一为地址范围内的页面分配物理页面和建立映射即可。使用page\_insert函数来建立页面映射关系。
+\item load\_icode()\\
+将ELF二进制映像文件读入进程的地址空间中。本部分需要熟悉ELF文件结构，头部和程序头部表的字段内容。首先判断ELF头部的e\_magic是否合法。然后参考boot/main.c读ELF文件的方法，读入每个程序段的内容到给定的位置(即ph->p\_va\~{}ph->p\_memsz，其中ph->p\_filesz\~{}ph->p\_memsz部分填充为0)。
+\item env\_create()\\
+分配一个进程，然后调用load\_icode加载ELF映像到进程。
+\item env\_run()\\
+开始运行一个新进程。如果上下文需要切换就切换，并且把进程计数加一。
+\end{itemize}
+
+\subsection{Exercise 3}
+\exercise{3}{Read Chapter 9, Exceptions and Interrupts in the 80386 Programmer's Manual (or Chapter 5 of the  IA-32 Developer's Manual), if you haven't already.}
+阅读文献。
+
+\subsection{Exercise 4}
+\exercise{4}{Edit trapentry.S and trap.c and implement the features described above. The macros TRAPHANDLER and TRAPHANDLER\_NOEC in trapentry.S should help you, as well as the T\_* defines in inc/trap.h. You will need to add an entry point in trapentry.S (using those macros) for each trap defined in inc/trap.h. You will also need to modify idt\_init() to initialize the idt to point to each of these entry points defined in trapentry.S; the SETGATE  macro will be helpful here.}
+trapentry.S部分，每个中断向量在inc/trap.h有定义，结合IA-32手册可以每个中断向量是带error code还是不带error code的，对应的使用TRAPHANDLER或者TRAPHANDLER\_NOEC宏。对于\_alltraps汇编，根据提示步骤，将每次的中断调用按照Trapframe结构单位来压栈。Trapframe出了通用寄存器之外，还有16位的ds和es位(由于压栈一次压32位内容故另有两个16位的填充内容,padding1和padding2)。过程如下：\\
+\textbf{
+;步骤1，将寄存器按照Trapframe结构压栈\\
+push \%ds \\
+push \%es \\
+pushal \\
+;步骤2，加载GD\_KD到\%ds和\%es寄存器中\\
+movw \$GD\_KD, \%ax \\
+movw \%ax, \%ds \\
+movw \%ax, \%es \\
+;步骤3，压入\%esp\\
+push \%esp \\
+;步骤4\\
+call trap \\
+;步骤5，弹出1-3步骤中压入的内容\\
+pop \%esp \\
+popal \\
+pop \%es \\
+pop \%ds \\
+;步骤6\\
+iret\\}
+
+kern/trap.c的idt\_init()部分，对于每个中断向量，首先通过extern链入向量名字，然后通过SETGATE设置门描述符即可。SETGATE宏用法总结如下：\\
+\textbf{SETGATE(gate, istrap, sel, off, dpl)\\
+gate: idt表项位置\\
+istrap: 有两种取值，为0时表示为trap gate或者exception gate，为1时表示interrupt gate，根据IA-32手册0-19号中仅有NMI为interrupt gate(值为1)，其他的都为0\\
+sel: 中断处理程序的代码段选择符，在内核中即为GD\_KT\\
+off: 在代码段中的偏移\\
+dpl: 描述符的权限级别，x86中取值为0-3，0为内核态，3为用户态。此处只有BRKPT和后面的SYSCALL为用户态\\
+}
+
+例如，处理除零异常为：\\
+\textbf{extern void trap\_divide();\\
+SETGATE(idt[T\_DIVIDE, 0, GD\_KT, trap\_divide, 0);\\}
+
+\subsubsection{Question 1}
+\exercise{}{What is the purpose of having an individual handler function for each exception/interrupt?}
+如果把所有的中断/异常都交给同一个handler来处理的话，当前的系统机制并不能区分各种类型的中断/异常应当怎么处理，因此需要独立的handler来处理。
+
+\subsubsection{Question 2}
+\exercise{}{Did you have to do anything to make the user/softint program behave correctly (i.e., as the grade script expects)? Why is this the correct behavior? What happens if the kernel actually allows softint's int \$14 instruction to invoke the kernel's page fault handler (which is interrupt vector 14)?}
+softint程序产生一个int \$14即缺页中断，正确的做法应当是使PGFLT的门描述符权限为内核态即0。因为如果用户态程序也能调用内核的缺页中断处理程序的话，那么用户态和内核态在缺页中断处理上没有优先级的区别(通常内核应当有较高优先级)，当内核发生缺页中断时就有可能造成没有页面可以使用的状态，从而使系统崩溃。
+
+\subsection{Challenge: generate macro table}
+\exercise{}{You probably have a lot of very similar code right now, between the lists of TRAPHANDLER in trapentry.S and their installations in trap.c. Clean this up. Change the macros in trapentry.S to automatically generate a table for trap.c to use. Note that you can switch between laying down code and data in the assembler by using the directives .text and .data. }
+这个Challenge需要做的就是把宏定义做成一张表，只需把每个TRAPHANDLER(\_NOEC)的num和name依次放入数据段中即可，由于表的长度不定因此我在表结束的位置放置两个0标识表的结束。同时为了方便引用在表头位置设置一个label。主要的原理就是把TRAPHANDLER和TRAPHANDLER\_NOEC宏定义改一下，在放置代码结束之后把num和name两个字段放入数据段中。\\
+相应的，在idt\_init()中，依次读取表中内容。为了方便读取设置一个结构体idthdr\_entry，其中包含long num和long name字段来读取表项中的内容。把每一个表项读取出来后用SETGATE设置门描述符即可。\\
+
+\subsection{Exercise 5}
+\exercise{5}{Modify trap\_dispatch()  to dispatch page fault exceptions to page\_fault\_handler().}
+本练习难度不大，熟悉Trapframe结构的情况下知tf\_trapno为中断向量，判断tf\_trapno == T\_PGFLT的情况下调用page\_fault\_handler即可。
+
+\subsection{Exercise 6}
+\exercise{6}{Modify trap\_dispatch() to make breakpoint exceptions invoke the kernel monitor. You should now be able to get make grade  to succeed on the breakpoint test. }
+类似上一个练习，根据tf\_trapno字段判断是否为T\_BRKPT，是则调用monitor函数。
+
+\subsubsection{Question 1}
+\exercise{}{The break point test case will either generate a break point exception or a general protection fault depending on how you initialized the break point entry in the IDT (i.e., your call to SETGATE from idt\_init). Why? How did you need to set it in order to get the breakpoint exception to work as specified above? }
+当断点处理程序的门描述符设置为用户态时，将会产生一个break point exception；若为内核态时，将会一个general protection fault。因为如果设置为内核态时只有内核能调用断点处理程序，而用户态程序不能，则会产生一个general protection fault。按照题目要求，所有的user environment都可以调用，所以此处应当设置为用户态。\\
+
+\subsubsection{Question 2}
+\exercise{}{What do you think is the point of these mechanisms, particularly in light of what the user/softint test program does? }
+类似于Exercise 5的Question 2所述，softint程序产生一个缺页中断，如果用户态的程序能够调用缺页中断处理程序内核就很有可能崩溃。为了保证内核能正确工作，对于每个中断/异常门描述符应当设置正确的权限。
+
+\subsection{Exercise 7}
+\exercise{7}{Add a handler in the kernel for interrupt vector T\_SYSCALL.}
+补充JOS的系统调用功能。主要有以下步骤：\\
+\begin{enumerate}
+\item 在kern/trapentry.S添加系统调用处理程序，根据IA-32手册32-255号中断向量应该都是不带error code的。
+\item 在idt\_init()函数中设置系统调用门描述符。权限应当设置为用户态。
+\item 在trap\_dispatch()函数中添加系统调用分配，根据要求应当把返回值记录在eax寄存器中，系统调用syscall的六个参数依次为eax， edx, ecx, ebx, edi, esi。
+\item 在kern/syscall.c中完成syscall函数。根据syscallno来决定使用何种函数，系统调用的号码在inc/syscall.h中定义。
+\end{enumerate}
+
+\subsection{Exercise 8}
+\exercise{8}{Add the required code to the user library, then boot your kernel. You should see user/hello  print "hello, world" and then print "i am environment 00000800". user/hello then attempts to "exit" by calling sys\_env\_destroy()  (see lib/libmain.c and lib/exit.c). Since the kernel currently only supports one user environment, it should report that it has destroyed the only environment and then drop into the kernel monitor.}
+本处题目好像有点错，因为实际上打出的是"i am environment 00001000"。本题需要在lib/libmain.c中添加代码，使得env指向envs数组中对应的进程。使用sys\_getenvid()函数和获取进程索引的宏ENVX即可完成。\\
+\textbf{\&envs[ENVX(sys\_getenvid())]}
+
+\subsection{Exercise 9}
+\exercise{9}{Change kern/trap.c to panic if a page fault happens in kernel mode. }
+主要有三步：
+\begin{enumerate}
+\item 完成user\_mem\_check()函数\\
+实质上就是对于给定地址范围内的每一个页面进行检查，如果地址超出了ULIM或者是试图访问的权限大于页面的权限就返回错误。步骤如下：\\
+枚举每一个页面，看范围是否超出ULIM；\\
+而后利用pgdir\_walk()找到二级页表项，检查齐权限位。首先检查页表项是否存在，不存在则报错；\\
+然后检查PTE\_P位，看映射的页面是否存在；\\
+再检查PTE\_U位，当且仅当试图访问权限为用户可读并且页表项不具有读权限时，报错，其他权限的情况都是合法的。\\
+最后检查PTE\_W位，当且仅当试图访问权限为写并且页表项不具有写权限时，报错，其他权限的情况都是合法的。\\
+\item 系统调用中需要对指针进行检查的只有sys\_cputs()，在函数内加入检查函数即可。用户可读权限即PTE\_U | PTE\_P。
+\item 修改kern/init.c从buggyhello启动即可。
+buggyhello试图在地址为1的位置写入1，而实质上到目前为止地址1没有映射到任何页面，因此会通不过检查。\\
+\end{enumerate}
+
+\subsection{Exercise 10}
+\exercise{10}{Change kern/init.c to run user/evilhello. Compile your kernel and boot it. The environment should be destroyed, and the kernel should not panic.}
+按题目要求修改kern/init.c的启动程序即可。
+
+\section{实习难点}
+本次lab中主要在两个地方卡住了，一是在exercise 2的时候，根据题目是执行到hello程序时到系统调用时int \$0x30才会panic，但是总是在进入程序的第一条指令就出错。这个bug调试用了很长的时间，我把增加的代码反反复复改了几遍都没有发现错误。没办法，只能从lab 2写的函数开始进行找错，最后在pgdir\_walk总算找到了错误，原来是我对于页表项的权限设置不对，没有设置用户位PTE\_U。\\
+二是在exercise 4的时候，在idt\_init()函数中设置中断向量的门描述符。在trapentry.S中增加TRAPHANDLER后，始终不知道怎么正确把name引入idt\_init()的SETGATE函数。试过extern void * name等，反复的调试修改中发现把名字当成函数引入才可以正确设置。即extern void name()。这点到现在也还没弄很清楚……\\
+
+\section{收获和总结}
+之前的lab 1和2因为上学期操统课程已经做过，所以时间花的相对少一点，这次的lab 3花了很多的时间。\\
+因为安装的是ubuntu 9.10, lab中安装低版本的binutils也花了不少的时间，这方面在网上的相关内容也很少。最后总结过程如下：更换为8.04的hardy源 --> 安装gcc-3.4和g++-3.4，重新链接 --> 下载binutils2.18，编译安装，如果不成功先卸载系统中的binutils再用apt-get安装(需要注意的是显卡驱动也会删掉，可以先装个envyng方便以后再把显卡装回来)。\\
+另外，发现我lab 2提交的代码中pmap.c中原来为了查找strlen函数在文件里多加了一行strlen，后来提交前忘了删掉而导致编译不过，删除那一行之后才行，希望助教明鉴……\\
+
+\section{参考文献}
+\begin{thebibliography}{10}
+\bibitem{1} 助教课程讲义
+\bibitem{2} IA-32手册，3-A第5章，interrupt and exception handling
+\bibitem{3} lab中很多地方请教了梁一中同学，尤其是安装低版本的binutils。
+\end{thebibliography}
+\end{document}
+

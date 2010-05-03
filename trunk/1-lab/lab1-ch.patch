@@ -1,0 +1,115 @@
+仅在 lab1-c: bochs.log
+仅在 lab1-c: bochs.out
+diff -u -r lab1/.bochsrc lab1-c/.bochsrc
+--- lab1/.bochsrc	2007-09-07 09:21:33.000000000 +0800
++++ lab1-c/.bochsrc	2010-03-11 13:15:46.000000000 +0800
+@@ -270,6 +270,7 @@
+ #   ata3-slave:  type=cdrom, path=iso.sample, status=inserted
+ #=======================================================================
+ ata0-master: type=disk, mode=flat, path="./obj/kern/bochs.img", cylinders=100, heads=10, spt=10
++#ata1-master: type=cdrom, path="./obj/boot/boot.iso", status=inserted
+ 
+ #=======================================================================
+ # BOOT:
+@@ -286,6 +287,7 @@
+ #=======================================================================
+ #boot: floppy
+ boot: disk
++#boot: cdrom
+ 
+ #=======================================================================
+ # CLOCK:
+仅在 lab1-c: .bochsrc~
+diff -u -r lab1/boot/Makefrag lab1-c/boot/Makefrag
+--- lab1/boot/Makefrag	2007-09-07 09:21:33.000000000 +0800
++++ lab1-c/boot/Makefrag	2010-03-11 13:15:46.000000000 +0800
+@@ -29,4 +29,3 @@
+ 	$(V)$(OBJDUMP) -S $@.out >$@.asm
+ 	$(V)$(OBJCOPY) -S -O binary $@.out $@
+ 	$(V)perl boot/sign.pl $(OBJDIR)/boot/boot
+-
+仅在 lab1-c/boot: Makefrag~
+diff -u -r lab1/kern/console.c lab1-c/kern/console.c
+--- lab1/kern/console.c	2007-09-07 09:21:33.000000000 +0800
++++ lab1-c/kern/console.c	2010-03-11 13:15:46.000000000 +0800
+@@ -148,8 +148,13 @@
+ cga_putc(int c)
+ {
+ 	// if no attribute given, then use black on white
+-	if (!(c & ~0xFF))
+-		c |= 0x0700;
++	//if (!(c & ~0xFF))
++		//c |= 0x0700;
++
++	//新修改后的颜色打印,若为数字则用黑底绿色(颜色代码02)打印，否则用黑底淡蓝色(颜色代码03)打印
++	if((c & 0xFF) >= '0' && (c & 0xFF) <= '9')
++		c |= 0x0200;
++	else c |= 0x0300;
+ 
+ 	switch (c & 0xff) {
+ 	case '\b':
+@@ -177,6 +182,7 @@
+ 	}
+ 
+ 	// What is the purpose of this?
++	//deal with the case when cursor position is out of screen
+ 	if (crt_pos >= CRT_SIZE) {
+ 		int i;
+ 
+仅在 lab1-c/kern: console.c~
+仅在 lab1-c/kern: init.c~
+diff -u -r lab1/kern/monitor.c lab1-c/kern/monitor.c
+--- lab1/kern/monitor.c	2007-09-07 09:21:33.000000000 +0800
++++ lab1-c/kern/monitor.c	2010-03-11 13:15:46.000000000 +0800
+@@ -23,6 +23,7 @@
+ static struct Command commands[] = {
+ 	{ "help", "Display this list of commands", mon_help },
+ 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
++	{"backtrace", "Trace the information of registers in function call", mon_backtrace} ,
+ };
+ #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
+ 
+@@ -59,6 +60,21 @@
+ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
+ {
+ 	// Your code here.
++	//code for printing registers ebp, eip and args
++	cprintf("Stack backtrace:\n");
++	uint32_t ebp = read_ebp();
++	//format :
++	//ebp f0109e58  eip f0100a62  args 00000001 f0109e80 f0109e98 f0100ed2 00000031
++	while(ebp != 0){
++		cprintf("ebp %08x  eip %08x  args %08x %08x %08x %08x %08x\n", 
++		ebp, *(uint32_t *)(ebp + 4),
++			 *(uint32_t *)(ebp + 8), 
++			 *(uint32_t *)(ebp + 12), 
++			 *(uint32_t *)(ebp + 16), 
++			 *(uint32_t *)(ebp + 20), 
++			 *(uint32_t *)(ebp + 24));
++		ebp = *(uint32_t *) ebp;  // get caller
++	}
+ 	return 0;
+ }
+ 
+仅在 lab1-c/kern: monitor.c~
+diff -u -r lab1/lib/printfmt.c lab1-c/lib/printfmt.c
+--- lab1/lib/printfmt.c	2007-09-07 09:21:33.000000000 +0800
++++ lab1-c/lib/printfmt.c	2010-03-11 13:15:46.000000000 +0800
+@@ -207,9 +207,12 @@
+ 		// (unsigned) octal
+ 		case 'o':
+ 			// Replace this with your code.
+-			putch('X', putdat);
+-			putch('X', putdat);
+-			putch('X', putdat);
++			num = getuint(&ap, lflag);
++			base = 8;
++			goto number;
++			//putch('X', putdat);
++			//putch('X', putdat);
++			//putch('X', putdat);
+ 			break;
+ 
+ 		// pointer
+仅在 lab1-c/lib: printfmt.c~
+仅在 lab1-c: obj

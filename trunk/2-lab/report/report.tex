@@ -1,0 +1,429 @@
+% about this file:
+% author: Swen, PKU
+% date: March 2010
+% TEX program = xelatex
+% cjk chinese needed
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[pinyin]{babel}
+\usepackage[cm-default]{fontspec}
+\usepackage{xunicode}
+\usepackage{xltxtra}
+\usepackage[center, pagestyles]{titlesec}
+
+%设置链接颜色，引入超链接包
+\usepackage[colorlinks,linkcolor=blue,bookmarksnumbered,bookmarksopen]{hyperref}
+
+%设置章节标题
+%\titleformat{command}[shape]{format}{label}{separate_length}{before}[after]
+\titleformat{\section}{\centering\Large\bfseries}{\S\,\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\S\, \thesubsection}{1em}{}
+\titleformat{\subsubsection}{\bfseries}{\S\, \thesubsubsection}{1em}{}
+
+%设置页眉页脚
+%\sethead[偶数页左页眉][偶数页中页眉][偶数页右页眉]
+%        [奇数页左页眉][奇数页中页眉][奇数页右页眉]
+%\setfoot类似
+\newpagestyle{main}{
+	\sethead{\small\S\,\thesection\quad\sectiontitle}{}{00748267 Swen}
+	\setfoot{}{- \thepage{} -}{} \headrule} %\footrule}
+\pagestyle{main}
+
+%设置字体
+%\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi_GB2312]{SimSun}
+\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi]{SimSun}
+\setsansfont[BoldFont=SimHei]{KaiTi}
+\setmonofont{NSimSun}
+
+%中文换行
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt minus 0.1pt
+
+%设置页面边距
+\addtolength{\voffset}{-30pt}
+\addtolength{\textheight}{55pt}
+
+\begin{document}
+%-------------我是华丽的正文分割线-------------------
+
+\centerline{\Huge{\textbf{操作系统实习lab 2实习报告}}}
+\rightline{\large{\textit{00748267 杨文新}}}
+\tableofcontents
+\thispagestyle{empty}
+
+\section{总体概述}
+本次lab主要给JOS完善了内存管理的功能，包括物理内存和虚拟内存的管理。物理内存采用分页管理（每个页面大小为4KB）的办法，把空闲的分页用一个双向链表来管理，这样的话JOS可以高效的实现物理页面的分配、查找和释放。虚拟内存管理则主要是建立虚拟地址到物理地址的映射机制，完成向关闭段式映射（实质就是设置base=0）、开启页式映射功能的地址转换机制的过渡。\\
+
+
+%-----------Answer to exercise----------------
+\section{lab问题回答}
+\subsection{Exercise 1}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 1.  Modify your stack backtrace function to display, for each EIP, the function name, source file name, and line number corresponding to that EIP. To help you we have provided debuginfo\_eip, which looks up eip in the symbol table and is defined in kern/kdebug.c.\\
+You also need to add some code to i386\_vm\_init()  in pmap.c, as indicated by comments there. For now, just add the code needed before the call to check\_page\_alloc(). \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+完成此练习需要获取函数调用过程中各个函数对应的函数名、源文件名、行号等信息，需要完成的代码部分为debuginfo\_eip 中使用二分查找行号、统计函数的参数个数，及mon\_backtrace 中打印函数调用的相关信息,只要熟悉原理难度不大。实现原理分以下几步：
+\begin{enumerate}
+\item JOS 的内核段中.stab段是内核符号表,其中存有文件、函数、行数等的信息；而.stabstr段中存有相应的文件和函数名等。通过结构体\fbox{Stab}来存储这些信息：\\
+\begin{tabular}{r l}
+\hline 
+struct Stab & uint32\_t n\_strx; // 指向stabstr表的索引 \\
+& uint8\_t n\_type; // 该符号项的类型 \\
+& uint8\_t n\_other; // 杂项信息 \\
+& uint16\_t n\_desc; // 描述域,即行号 \\
+& uintptr\_t n\_value; // 符号项的值 \\
+\hline
+\end{tabular}\\
+其中的n\_strx 指向的stabstr表中存有该符号项的名字,n\_type 记录该符号的类型,例如n\_type == N\_FUN 表明该符号项为函数,n\_type == N\_PSYM 表明该符号为参数等。另外,文件和函数项的n\_value 字段表示该文件或函数装载后的虚拟地址。系统通过Stab数组来存放所有的符号项。\\
+
+\item backtrace()通过调用函数debuginfo\_eip()来获取需要的信息,该函数有两个参数,一个是给定的地址addr,另一个是用来存放相关信息的结构体Eipdebuginfo。debuginfo\_eip()的实现过程为(查找符号项采用二分查找函数stab\_binsearch 实现):
+\begin{enumerate}
+\item 检查 addr 参数和 string table 的合法性;
+\item 在整个 stab 数组中查找 addr 所在的源文件;
+\item 在找到源文件的 stabs 区域中查找 addr 所在的函数;
+\item 在找到的函数 stabs 区域中查找 addr 的行号;
+\item 扩展开查找所在的源文件并赋给 eip\_file;
+\item 查找并设置函数参数个数。
+\end{enumerate}
+查找完成后,所需要的信息均存放在结构体\fbox{Eipdebuginfo}中。其包含了文件名、行号、函数名等信息（注意函数名字符串末尾没有'\textbackslash0'结束符，打印时可以先根据函数名长度复制到一个数组再进行操作）。\\
+\item backtrace()函数通过 readeip()获取 eip,然后作为参数调用 debuginfo\_eip 后获取得到文件名、函数名、行号、参数数量等信息即可完成该练习。参数值的获取通过 ebp,类似于 Lab 1 中的练习。
+\end{enumerate}
+
+\subsection{Exercise 2}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 2.  In the file kern/pmap.c, you must implement code for the following functions.\\
+\hspace{2em}boot\_alloc()\\
+\hspace{2em}page\_init()\\
+\hspace{2em}page\_alloc()\\
+\hspace{2em}page\_free()\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+这几个函数用于对物理内存的进行管理，对物理页面使用情况进行初始化，实现对物理页面的管理分配。
+\begin{enumerate}
+\item boot\_alloc(uint32\_t n, uint32\_t align)\\
+分配大小为n字节的物理空间，以align进行对齐。在JOS中还没有建立页表虚拟空间系统时用作物理内存分配器。实质上只用到了两次：一是分配给页目录的页，二是分配给所有物理页面的数组pages，使内核可以跟踪所有物理页面的使用情况。其实现原理为先将boot\_freemem（boot\_freemem以上都是可分配的空闲区域）根据align向上对齐，再用一个指针记录这时候的位置即为分配空间的地址。返回前把boot\_freemem增加n即可。
+\item page\_init(void)\\
+该函数的主要功能是初始化管理物理内存页面,同时建立空闲页面链表。0 号页面保留为实时模式的中断向量表和 BIOS 相关结构体使用, IO hole 和内核段的页面也应当保留以防止被覆盖。其他则加入空闲页表链表中。按照内核分配要求,物理页面的使用情况总结如下:\\
+\begin{tabular}{|l|}
+\hline
+pages[i].pp\_ref = 0, \\
+\fbox{PADDR(boot\_freemem) / PGSIZE} <= i < \fbox{npages}\\
+空闲页面\\
+\hline
+pages[i].pp\_ref = 1, \\
+\fbox{EXTPHYSMEM / PGSIZE} <= i < \fbox{PADDR(boot\_freemem) / PGSIZE}\\
+内核段，占用页面\\
+\hline
+pages[i].pp\_ref = 1, \\
+\fbox{IOPHYSMEM / PGSIZE} <= i < \fbox{EXTPHYSMEM / PGSIZE}\\
+IO Hole，占用页面\\
+\hline
+pages[i].pp\_ref = 0, \\
+\fbox{1} <= i < \fbox{IOPHYSMEM / PGSIZE}\\
+空闲页面\\
+\hline
+pages[i].pp\_ref = 1, \\
+i = \fbox{0}\\
+保留，占用页面\\
+\hline
+\end{tabular}
+\item page\_alloc(struct Page **pp\_store)\\
+功能为分配一个物理页面，pp\_store是一个用来指向分配得到的页面Page的指针。首先查看空闲链表中是否有可分配页面，若没有则返回；否则从链表头部取出一个页面分配，并用pp\_store记录。\\
+\item page\_free(struct Page *pp)\\
+释放一个物理页面到空闲页面链表。直接将页面加入链表的头部即可完成，使用宏LIST\_INSERT\_HEAD。
+\item 补全i386\_vm\_init()的相关代码，通过check\_page\_alloc()\\
+建立好页目录后分配空间给管理物理页面的数组即可。\\
+\end{enumerate}
+
+\subsection{Exercise 3}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 3.  Read chapters 5 and 6 of the  Intel 80386 Reference Manual, if you haven't done so already. Although JOS relies most heavily on page translation, you will also need a basic understanding of how segmentation works in protected mode to understand what's going on in JOS. \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+该练习要求掌握短段页式地址转换机制。图\ref{address}给出了地址转换机制的过程：\\
+\begin{figure}[h]
+\begin{center}
+\includegraphics[width = \textwidth]{addr_trans.png}
+\end{center}
+\caption{段页式地址转换机制}\label{address}
+\end{figure}
+
+\subsection{Exercise 4}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 4.  Review the  debugger section in the  Bochs user manual, and make sure you understand which debugger commands deal with which kinds of addresses. In particular, note the various vb, lb, and pb breakpoint commands to set breakpoints at virtual, linear, and physical addresses. The default b command breaks at a physical address. Also note that the x command examines data at a linear address, while the command xp takes a physical address. Sadly there is no xv at all. \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+回顾Bochs的调试功能。\\
+
+
+\subsubsection{Exercise 4.1}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Assuming that the following JOS kernel code compiles correctly and doesn't crash, what type should variable x have, uintptr\_t or physaddr\_t?\\
+\hspace{2em}mystery\_t x;\\
+\hspace{2em}char* value = return\_a\_pointer();\\
+\hspace{2em}*value = 10;\\
+\hspace{2em}x = (mystery\_t) value;\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+变量 x 的类型应当是 uintptr\_t。内核程序里面所使用给的地址都是虚拟地址,在实际代码运行的过程中都是以虚拟地址进行的，硬件会在具体寻址的时候实现段页式的转换以访问实际的物理内存地址。因此，x不是一个物理地址，而是指向值为10的指针。\\
+
+\subsection{Exercise 5}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 5.  In the file kern/pmap.c, you must implement code for the following functions.\\
+\hspace{2em}pgdir\_walk()\\
+\hspace{2em}boot\_map\_segment()\\
+\hspace{2em}page\_lookup()\\
+\hspace{2em}page\_remove()\\
+\hspace{2em}page\_insert()\\
+page\_check(), called from i386\_vm\_init(), tests your page table management routines. You should make sure it reports success before proceeding.\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+这几个函数用来进行页表管理，建立线性地址到物理地址的映射关系。总结这部分比较有用的宏和函数有：\\
+\textit{
+\indent PADDR(va) 将内核虚拟地址（即KERNBASE及以上）转换为物理地址；\\
+\indent KADDR(pa) 将物理地址转换为对应的内核虚拟地址；\\
+\indent page2ppn(pp) 获取页面相对于pages数组基址的偏移量；\\
+\indent page2pa(pp) 将页面线性地址转换为物理地址；\\
+\indent pa2page(pa) 将物理地址转换为页面线性地址；\\
+\indent page2kva(pp) 求出页面的内核虚拟地址；\\
+\indent PDX(la) 获取线性地址的在页目录的下标；\\
+\indent PTX(la) 获取线性地址的在页表的下标；}\\ 
+各函数的实现原理如下：\\
+\begin{enumerate}
+\item pgdir\_walk(pde\_t *pgdir, const void *va, int create)\\
+该函数的主要功能是,对于给定的页目录 pgdir 和虚拟地址 va,首先在页目录中查找相应的页表项,如果存在则返回页表项的指针;否则,根据第三个参数 create 来判断是否要建立新的页表项,若为 0 则不用,返回 NULL,若为 1 则分配一个新的页表。当然,如果没有空闲页面可以分配了,那么返回 NULL,否则将分配得到的新页面的信息记录在页表项中。\\
+根据va获取获取页表项的指针过程为：先由va得到页目录项，然后得到页目录的物理地址，再将该地址转为内核虚拟地址，则得到了页表。在页表按照PTX(va)索引可得到页表项，取其地址即可。如下：\\
+\textit{\&(((pte\_t *)KADDR(PTE\_ADDR(pgdir[PDX(va)])))[PTX(va)]);}\\
+还需要注意的是如果要分配一个新的页表，那么要将得到的页表进行初始化工作，以防有的页表项PTE\_P位正好为1造成检查通不过:(。另外页目录项的权限位应当为PTE\_P | PTE\_W，使内核有权限对其进行修改。
+\item boot\_map\_segment(pde\_t *pgdir, uintptr\_t la, size\_t size, physaddr\_t pa, int perm)\\
+该函数的主要功能是，将给定的一段长度的线性地址[la, la + size)通过页表映射到相同长度的物理地址[pa, pa + size)上。实现原理为:将线性地址空间划分成若干个页面,通过pgdir\_walk()查找相应的页表项(如果不存在则分配新页面),查找到之后设置相应的页表项信息，即物理地址和权限。\\
+\item page\_lookup(pde\_t *pgdir, void *va, pte\_t **pte\_store)\\
+寻找虚拟地址va映射的页面线性地址，如果没有页面映射在va则返回0。首先根据pgdir\_walk()找到va对应的页表项，如果页表项存在则将页表项对应物理地址转换为页面线性地址并返回。否则返回0。
+\item page\_remove(pde\_t *pgdir, void *va)\\
+该函数的主要功能是取消相应的页表项对于物理地址的映射,利用page\_lookup()当找到相应的页表之后,将页表项设置成 0。同时原页表项对应的物理页面如果被引用次数减一,若为 0,则表示多出一个空闲页面,加入空闲页表链中(page\_decref 函数中已经实现)。
+\item page\_insert(pde\_t *pgdir, struct Page *pp, void *va, int perm)\\
+该函数功能为建立起页面pp与虚拟地址va的映射关系。首先根据pgdir\_walk()查找出va对应的页表项，如果无页面可用则返回-E\_NO\_MEM；否则判断页表是否与给定的pp相同，相同的话只需要修改权限即可，不同的话则移除后重新填入pp的物理地址和权限信息，并将pp的页面引用加一。最后取消TLB信息。\\
+\end{enumerate}
+
+\subsection{Exercise 6}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Exercise 6.  Fill in the missing code in i386\_vm\_init() after the call to page\_check().\\
+Your code should now pass the check\_boot\_pgdir() check. \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+使用boot\_map\_segment()函数按要求将三部分地址空间映射到物理地址即可。
+
+\subsubsection{Exercise 6.1}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+What entries (rows) in the page directory have been filled in at this point? What addresses do they map and where do they point? In other words, fill out this table as much as possible:\\
+\hline
+\end{tabular}
+\textit{\large{答：}}如下图所示：\\
+\begin{tabular}{|l|l|l|}
+\hline
+Entry & Base Virtual Address & Points to (logically):\\
+\hline
+1023 & 0xffc00000 & 同下\\
+\hline
+... & ... & 同下\\
+\hline
+960 & 0xf0000000 & KERNBASE以上分别映射物理地址0\~{}256MB\\
+\hline
+959 & 0xefc00000 & 页目录表 PADDR(pgdir) 内核可写\\
+\hline
+958 & 0xef800000 & 高部分指向内核栈,低部分不可读写\\
+\hline
+957 & 0xef400000 & 页目录表 PADDR(pgdir) 用户可写\\
+\hline
+956 & 0xef000000 & 页面数组指针 PADDR(pages)\\
+\hline
+955 & 0xeec00000 & 未填充\\
+\hline
+... & ... & 同上\\
+\hline
+0 & 0x00000000 & 同上\\
+\hline
+\end{tabular}
+
+\subsubsection{Exercise 6.2}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+After check\_boot\_pgdir(), i386\_vm\_init() maps the first four MB of virtual address space to the first four MB of physical memory, then deletes this mapping at the end of the function. Why is this mapping necessary? What would happen if it were omitted? Does this actually limit our kernel to be 4MB? What must be true if our kernel were larger than 4MB?\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+这个映射是必要的，因为这样在开启页式映射之后才能使虚拟地址正确的转换为物理地址，即确保寻址的正确性。假如这一步省略了，那么在开启页式映射之后内核以上虚拟空间经过段式映射之后到线性地址的0处（因为此时base=-KERNBASE），而前面的工作中线性地址0处页面是没有映射到物理地址的，因此将会映射不到物理地址的0处。\\
+这实际上将我们的内核限制在4MB之内，如果内核大于4MB，那么需要将更多的KERNBASE以上的页表项复制到低处。\\
+
+\subsubsection{Exercise 6.3}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+(From Lecture 4) We have placed the kernel and user environment in the same address space. Why will user programs not be able to read or write the kernel's memory? What specific mechanisms protect the kernel memory? \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+这是由于保护机制的作用。否则的话用户程序就有可能修改内核造成系统崩溃。在段式映射和页式映射的过程中都有相应的保护机制。段式检查权限机制中是通过 CPL、DPL、RPL 等来实现的，而页式权限检查机制是通过 PDE 和 PTE 中的 P 位、U/S 位 、R/W 等位来控制用户的访问权限。\\
+
+\subsubsection{Exercise 6.4}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+What is the maximum amount of physical memory that this operating system can support? Why? \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+JOS 能支持的最大物理内存是 256MB。因为只将KERNBASE\~{}2\^{}32的虚拟空间映射到了0\~{}256MB的物理内存，因此最大可以支持这么多的内存。\\
+
+\subsubsection{Exercise 6.5}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+How much space overhead is there for managing memory, if we actually had the maximum amount of physical memory? How is this overhead broken down? \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+管理物理页面需要的总开销为:1 个页目录,1024 个页表,每个页面为 4KB 大小,那么 256MB 的物理页面共有 216 个页面，而每个物理页面需要一个 Page 数组来管理,一个 struct Page 的大小为:4B + 4B + 2B = 10B (两个指针和一个 int16 的 pp\_ref)。\\
+那么总的开销为: (1 + 1024) * 4KB + 216 * 10B = 4740 KB\\
+
+\subsection{Challenge 2: Mappings}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Extend the JOS kernel monitor with commands to:\\
+\hspace{2em}Display in a useful and easy-to-read format all of the physical page mappings (or lack thereof) that apply to a particular range of virtual/linear addresses in the currently active address space. For example, you might enter 'showmappings 0x3000 0x5000' to display the physical page mappings and corresponding permission bits that apply to the pages at virtual addresses 0x3000, 0x4000, and 0x5000.\\
+\hspace{2em}Explicitly set, clear, or change the permissions of any mapping in the current address space.\\
+\hspace{2em}Dump the contents of a range of memory given either a virtual or physical address range. Be sure the dump code behaves correctly when the range extends across page boundaries!\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+实现的两个挑战只要熟悉代码均比较容易，主要是利用系统提供的宏和函数来完成工作。本部分实现了三个功能:\\
+\begin{enumerate}
+\item 查询虚拟地址映射的物理地址及权限信息 show\_map\\
+实现的原理为将给定的开始地址和结束地址分别与页面大小 PGSIZE 进行下对齐和上对齐,然后枚举其中的每一个页面,找到相应的页表项后把页表项的信息读出。使用其Virtual Page Table 机制可以很方便地查询页表项,如给定虚拟地址 va,那么\\
+\indent pde\_t pde = vpd[PDX(va)];\\
+即可得到对应的页目录项,\\
+\indent pte\_t pte = vpt[PDX(va) * 1024 + PTX(va)];\\
+即可得到对应的页表项。\\
+\item 设置给定地址的页面权限 set\_perm\\
+实现原理为与 show\_map 类似，给定的开始地址和结束地址分别与页面大小 PGSIZE进行下对齐和上对齐,然后枚举其中的每一个页面,找到相应的页表项后把页表项的权限值修改即可。本练习我的 set\_perm 为修改页表项的 User 位,0 为用户不可写,其他值为用户可写。\\
+\item 查看给定地址的内容等功能 dump\_va 和 dump\_pa查看给定的虚拟地址或者物理地址的内容。实现原理比较简单,例如虚拟地址时将给定的地址当作地址,直接强转为地址指针再取内容即可读出虚拟地址的内容。物理地址加上 KERNBASE 再当作虚拟地址读取即可。边界的处理为虚拟地址应当是被映射的部分，物理地址应当在0\~{}256M 之间。\\
+\end{enumerate}
+
+\subsection{Challenge 5: Pages debugging}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+Challenge!  Extend the JOS kernel monitor with commands to allocate and free pages explicitly, and display whether or not any given page of physical memory is currently allocated. For example:
+\begin{verbatim}
+	K> alloc_page
+		0x13000
+	K> page_status 0x13000
+		allocated
+	K> free_page 0x13000
+	K> page_status 0x13000
+		free
+\end{verbatim}
+Think of other commands or extensions to these commands that may be useful for debugging, and add them. \\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+本部分实现了三个功能:\\
+\begin{enumerate}
+\item 分配一个物理页面 alloc\_page\\
+实现原理为利用练习中完成的 page\_alloc 函数分配一个物理页面,如果没有则分配失败,成功则打印出物理页面的地址。
+\item 查询给定物理地址对应页面的状态 page\_status\\
+实现原理为先利用 pa2page 函数得到物理地址对应的页面,然后根据页面被引用的次数来判断是否空闲。
+\item 释放一个物理页面 free\_page\\
+实现原理类似查询页面状态,先找到物理地址对应的页面再利用 page\_decref 函数减少页面被引用次数即可。
+\end{enumerate}
+
+\subsection{自选作业1}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+什么是assert?在JOS和我们普通的libc中分别是怎样实现的?还有一个static\_assert,试分析它的作用,以及他是如何发挥作用的。\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+assert(P)即断言，其中P为一个谓词，如果P为真的话表明通过，如果P为假的话则不能通过。
+JOS中的实现为（assert.h）：\\
+\#define assert(x)               \textbackslash \\
+\hspace{2em}do \{ if (!(x)) panic("assertion failed: \%s", \#x); \} while (0)\\
+即如果判断条件为假的话就调用panic，并且输出条件的信息。其中\#x表示把参数x当作一个字符串输出，这样便能报出错误的信息。\\
+
+普通的libc中assert的实现为(参考GNU glibc 2.9中assert/assert.h)：\\
+/* void assert (int expression);\\
+   If NDEBUG is defined, do nothing.\\
+   If not, and EXPRESSION is zero, print an error message and abort.  */\\
+\#ifdef  NDEBUG\\
+\# define assert(expr)           (\_\_ASSERT\_VOID\_CAST (0))\\
+即实现的原理与JOS类似。\\
+
+静态assert的定义如下：\\
+// static\_assert(x) will generate a compile-time error if 'x' is false.
+\\ \#define static\_assert(x)        switch (x) case 0: case (x):
+分析其实现可知x为false时可以在编译的时候就查找出这个错误，因为switch中将会出现两个case(0)，经另外编写程序测试当x=0时报出duplicate case value的错误。因此静态断言可以在编译阶段就查找出错误，提高系统效率。\\
+
+\subsection{自选作业2}
+\begin{tabular}{|p{\textwidth}|}
+\hline
+memset, strlen都是很常用的函数,请分析JOS和普通libc中的实现。JOS中memset的输入是(VA?LA?PA)\\
+\hline
+\end{tabular}
+\textit{\large{答：}}
+memset在JOS中的实现实际上就是将从给定地址开始的n个字节逐个填充为指定内容c：\\
+\begin{verbatim}void * memset(void *v, int c, size_t n) { 
+        char *p; 
+        int m;
+        p = v;
+        m = n;
+        while (--m >= 0)
+                *p++ = c;
+        return v;
+}\end{verbatim}
+GNU glibc中实现则考虑了不同体系结构的情况，如果是ix86体系结构的话则对于1<=n<=16的情况枚举不同处理方法，对于n>16和其他体系结构则如上处理。\\
+JOS中memset的输入应当是虚拟地址va。\\
+
+JOS中strlen的实现实质上就是从给定地址开始逐个字节判断是不是等于'\textbackslash{}0'，如果不是0则累计长度加一，最后返回累计的长度。\\
+\indent GNU glibc中的strlen用的方法要巧妙的多，采用每次4个字节的检测方法。这方面主要参考网上的注释\href{http://bigwhite.blogbus.com/logs/37753065.html}{strlen}。
+
+\section{实习难点}
+本次实习卡住的问题主要有两个：
+\begin{enumerate}
+\item 各种地址的转换机制问题\\
+在还没有弄清楚JOS的地址转换机制之前看代码时往往很容易混乱，因为不知道自己当前操作的对象是什么以及为什么要这样做。课程提供的lab 2介绍给了大概的虚拟空间页表和物理空间页表的映射过程，结合intel i386 reference manual的第5章及JOS代码，最后终于明白了整个过程，实质上内核要做的主要有两步：第一是对物理内存的管理，对物理页面进行分配释放管理；第二是关闭段式映射开启页式映射，但是先要设置好线性空间到物理空间的映射关系，否则在开启页式映射的时候会导致寻址错误。另外代码中有很多的宏定义、函数定义也很容易混乱，在草稿纸上用图画出这些宏和函数与地址转换的关系也有助于保持头脑的清晰。
+\item pgdir\_walk的权限和初始化问题\\
+pgdir\_walk获取一个页表项的指针，如果虚拟地址va对应的页表不存在则新建一个页表，最初分配完之后没有对页表进行初始化工作，导致make grade的时候总是失败。经过仔细思考理清思路，才发现进行初始化是有必要的，因为没有初始化页表有可能会导致问题：假如有的页表项的PTE\_P位不为0，那么进行页面映射的时候就会认为对应物理页面存在，有可能会出错。\\
+另外就是页目录项的权限问题，起初对于地址空间的认识不够，我认为只要PTE\_P就可以，不过屡次的make grade failed，和在看资料时对JOS认识逐渐加深，总算发现了这个问题的所在。我们现在设置的是内核的线性空间，因此对于页目录项内核应当有权限进行读写，及权限至少为PTE\_W | PTE\_P。
+\end{enumerate}
+
+\section{收获和总结}
+\hspace{1em} 在lab 2中学会了vim + ctags阅读代码的方法，觉得真的很方便～相比庞大臃肿的IDE如eclipse, visual studio等，vim + ctags显得小巧而实用。不过根据6.828网页SVN或CVS也是管理软件的好方法，慢慢学习。\\
+\indent 此外就是对于\LaTeX{}进行排版工作变得更加娴熟，自己制作了第一个report模板:)。只是对于字体方面的了解不深，觉得制作出来的文档总是觉得太单调，不够美观。\\
+\indent lab好费时间……要不是上学期已经粗略做过一遍的话估计会更累:(。不过回头看来，JOS的内存管理也是挺简单的一个模型，自己应该尝试一下更难的挑战。
+
+\section{参考文献}
+\begin{thebibliography}{10}
+\bibitem{b0} 助教课程讲义
+\bibitem{b1} 陈老师以前的lab 2讲义，background assignment, linux源码阅读等等
+\bibitem{b2} INTEL 80386 PROGRAMMER'S REFERENCE MANUAL 1986，第5章、第6章
+\bibitem{b3} 关于地址映射请教过谢佳亮同学
+\bibitem{b5} \href{http://man.chinaunix.net/linux/lfs/htmlbook/appendixa/glibc.html}{GNU glibc}
+\bibitem{b6} \href{http://bigwhite.blogbus.com/logs/37753065.html}{glibc strlen实现分析}
+\bibitem{b4} \href{http://g.cn}{谷歌}, \href{http://www.google.com/ncr}{Google}
+\end{thebibliography}
+
+\end{document}
+
