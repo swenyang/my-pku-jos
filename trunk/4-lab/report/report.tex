@@ -1,0 +1,268 @@
+% about this file:
+% author: Swen, PKU
+% date: March 2010
+% TEX program = xelatex
+% cjk chinese needed
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[pinyin]{babel}
+\usepackage[cm-default]{fontspec}
+\usepackage{xunicode}
+\usepackage{xltxtra}
+\usepackage[center, pagestyles]{titlesec}
+
+%设置链接颜色，引入超链接包
+\usepackage[colorlinks,linkcolor=blue,bookmarksnumbered,bookmarksopen]{hyperref}
+
+%设置章节标题
+%\titleformat{command}[shape]{format}{label}{separate_length}{before}[after]
+\titleformat{\section}{\centering\Large\bfseries}{\S\,\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\S\, \thesubsection}{1em}{}
+\titleformat{\subsubsection}{\bfseries}{\S\, \thesubsubsection}{1em}{}
+
+%设置页眉页脚
+%\sethead[偶数页左页眉][偶数页中页眉][偶数页右页眉]
+%        [奇数页左页眉][奇数页中页眉][奇数页右页眉]
+%\setfoot类似
+\newpagestyle{main}{
+	\sethead{\small\S\,\thesection\quad\sectiontitle}{}{00748267 Swen}
+	\setfoot{}{- \thepage{} -}{} \headrule} %\footrule}
+\pagestyle{main}
+
+%设置字体
+%\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi_GB2312]{SimSun}
+\setmainfont[BoldFont=SimHei,ItalicFont=KaiTi]{SimSun}
+\setsansfont[BoldFont=SimHei]{KaiTi}
+\setmonofont{NSimSun}
+
+%中文换行
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip = 0pt plus 1pt minus 0.1pt
+
+%设置页面边距
+\addtolength{\voffset}{-30pt}
+\addtolength{\textheight}{55pt}
+
+%定义新命令exercise
+\newcommand{\exercise}[2]{
+\begin{tabular}{|p{\textwidth}|}
+\hline
+#1: #2\\
+\hline
+\end{tabular}
+\textit{\large{答：}}}
+
+\begin{document}
+%-------------我是华丽的正文分割线-------------------
+
+\centerline{\Huge{\textbf{操作系统实习lab 2实习报告}}}
+\rightline{\large{\textit{00748267 杨文新}}}
+\tableofcontents
+\thispagestyle{empty}
+
+\section{总体概述}
+总的来说，本次实习需要实现抢占式多任务的用户进程。分为三个部分：Part A，实现用户态进程的创建工作，使用Round-Robin算法进程调度工作；Part B，完成对于用户程序发生的缺页中断的处理，实现写时复制的fork功能；Part C，开启用户进程的时钟中断，使用户进程运行一定的时间片后交出CPU，实现进程间的通信功能，使得进程间可以共享页面。\\
+在本次lab中，我完成了Exercise 1\~{}11，并且做了固定优先级调度算法的challenge。三部分的make grade均得到满分。
+
+\section{lab问题回答}
+\subsection{Exercise 1}
+\exercise{Exercise 1}{Implement round-robin scheduling in sched\_yield() as described above. Don't forget to modify syscall() to dispatch sys\_yield().}
+Round-Robin调度算法比较简单，总结要点如下：\\
+\begin{itemize} 
+\item envs[0]为idle进程，当且仅当没有其他进程处于ENV\_RUNNABLE状态时，系统会运行idle进程，该进程所做的工作就是不断调用sys\_yield()查询看有没有其他就绪程序。
+\item 当需要挑选下一个进程来运行时，在envs数组中用循环遍历的方法，从当前进程的下一个开始，一旦发现处于ENV\_RUNNABLE状态的进程就运行之。
+\item 若循环遍历一次发现没有可以运行的进程，此时如果原进程可以运行那么继续运行该进程，否则运行envs[0]的idle进程。
+\end{itemize}
+需要做的事就是在sys\_call里面添加处理sys\_yield()的代码，另外在kern/sched.c补全调度算法。用ENVX(curenv->env\_id)可以获取当前进程在envs数组中的索引。
+\\
+
+\subsubsection{Quetion 1}
+\exercise{Question 1}{In your implementation of env\_run() you should have called lcr3(). Before and after the call to lcr3(), your code makes references (at least it should) to the variable e, the argument to env\_run. Upon loading the \%cr3 register, the addressing context used by the MMU is instantly changed. But a virtual address (namely e) has meaning relative to a given address context--the address context specifies the physical address to which the virtual address maps. Why can the pointer e be dereferenced both before and after the addressing switch? }
+每个进程都有自己的虚拟地址空间，当进行进程切换时，通过调用lcr3()来加载新进程的页目录地址（存放在Env结构体的env\_pgdir域），从而实现地址空间的转换。每个进程的页目录和页表记录了进程的虚拟地址空间和物理地址空间的映射关系。另外，JOS进程的内核段与物理地址的映射关系都是一样的，因此在进程切换的前后地址空间可以维持。
+
+\subsection{Challenge: fixed-priority scheduler}
+\exercise{Challenge !}{Add a less trivial scheduling policy to the kernel, such as a fixed-priority scheduler that allows each environment to be assigned a priority and ensures that higher-priority environments are always chosen in preference to lower-priority environments.}
+本challenge实现了一个固定优先级调度算法，赋予每个进程一个优先级env\_prio，当进行进程切换时时根据进程优先级来选择下一个进程，高优先级比低优先级优先运行。主要工作有两方面：一是实现一个可以修改进程优先级的函数，二是实现带优先级的进程调度算法。具体实现需要做的工作如下：\\
+\begin{enumerate}
+\item inc/syscall.h增加系统调用号\\
+即在文件中的系统调用号增加一项SYS\_set\_prio，使该系统调用号进入设置优先级函数。
+\item inc/lib.h增加函数声明\\
+在用户库中，声明sys\_set\_prio()函数。
+\item lib/syscall.c增加函数处理函数sys\_set\_prio()\\
+使用户态程序使用设置优先级函数时，产生一个系统调用，进入内核态进行处理。
+\item inc/env.h增加env\_prio域\\
+在Env结构体即进程的定义中，为进程增加优先级域int env\_prio；同时声明两个宏：最高优先级ENV\_PRIO\_HIGHEST和最低优先级ENV\_PRIO\_LOWEST。优先级值越大，表示优先级别越高。
+\item kern/syscall.c的syscall()函数里分配系统调用\\
+对syscall函数的第一个参数进行判断，如果是SYS\_set\_prio则进入内核的sys\_set\_prio()函数进行处理。
+\item kern/syscall.c增加内核的设置优先级函数\\
+该函数使用两个参数，一个是进程id，另一个是要设置的优先级。实现比较简单，首先检查优先级是否合法，如果合法则将进程的env\_prio修改。
+\item kern/sched.c修改调度算法
+带优先级的算法复杂度为O(n)，流程如下：\\
+a. 首先找到有较高优先级的进程，定义get\_highest\_envx()函数：从除了当前进程索引的下一个进程开始，循环遍历整个数组，使用临时变量记录具有较高优先级的进程，一旦遇到最高优先级的进程则直接返回其索引；如果没有遇到有最高优先级的进程，那么前面已经记录了所有进程里具有最高优先级别的进程，返回其索引。如果没有进程处于ENV\_RUNNABLE状态则返回-1。\\
+b. 根据函数返回的进程索引，如果为-1表示没有可以运行的其他进程，此时如果当前进程可运行则继续运行；否则交给idle进程。如果返回值大于0则表明已找到，运行找到的进程即可。\\
+\item user下新建设置优先级的用户程序\\
+为方便测试调度情况我一共写了4个文件：yield1.c, yield2.c, yield3.c, yield4.c，分别把自己的优先级设置为1，2，3，4。类似于yield.c。程序运行时先把自身的id，索引，优先级等打印出来再调用sys\_yield()切换，反复进行5次。\\
+\item kern/Makefrag增加用户程序
+为了使写的程序编译为可执行程序，需要在Makefrag文件中增加编译的语句。
+\item kern/init.c设置4个可以设置优先级的程序
+\item 编译运行JOS\\
+编译运行后正如算法实现的一样执行，首先挑选优先级4的程序运行，而后优先级3和4的程序交替运行，两者执行完毕之后优先级2和1的程序才开始交替运行。\\
+\end{enumerate}
+
+\subsection{Exercise 2}
+\exercise{Exercise 2}{Implement the system calls described above in kern/syscall.c. You will need to use various functions in kern/pmap.c and kern/env.cc, particularly envid2env(). For now, whenever you call envid2env(), pass 1 in the checkperm parameter. Be sure you check for any invalid system call arguments, returning -E\_INVAL in that case. Test your JOS kernel with user/dumbfork and make sure it works before proceeding. }
+本练习要完成建立进程的系统调用，主要利用了envid2env()和page\_alloc, page\_insert函数，包括以下几个方面：
+\begin{itemize}
+\item sys\_exofork \\
+根据提示，分配一个新的进程，把进程的状态设置为ENV\_NOT\_RUNNABLE，把父进程的寄存器值复制给子进程，但是把子进程的reg\_eax设置为0以使该函数返回0。
+\item sys\_env\_set\_status \\
+设置一个进程的状态为给定值(ENV\_RUNNABLE或者ENV\_NOT\_RUNNABLE)。
+\item sys\_page\_alloc \\
+对于给定的进程分配一个物理页面，并且映射到指定的虚拟地址上去。所做的工作主要是进行权限的检查：虚拟地址的合法性，即在UTOP之下及要跟页面对齐（使用PGOFF宏可以方便的判断）；访问权限的合法性，不得对PTE\_P, PTE\_U, PTE\_AVAIL, PTE\_W之外的位进行设置，同时必须要具备PTE\_P和PTE\_U位；进程id的合法性，检查进程是否存在。另外，如果物理页面与虚拟地址映射失败应当释放物理页面。完成上述工作之后把得到的页面清0。\\
+\item sys\_page\_map \\
+将源进程和目的进程给定的虚拟地址映射到同一个物理页面去。所作的工作同样主要是对权限的检查，遇上一个函数有点不同，按照注释完成即可，不再赘述。\\
+\item sys\_page\_unmap \\
+释放给定进程虚拟地址上的页面映射关系。
+\end{itemize}
+
+\subsection{Exercise 4}
+\exercise{Exercise 4}{Implement the sys\_env\_set\_pgfault\_upcall system call. Be sure to enable permission checking when looking up the environment ID of the target environment, since this is a "dangerous" system call. }
+为了处理进程的缺页中断，用户进程需要在JOS内核注册缺页中断处理出口，本部分完成的sys\_env\_set\_pgfault系统调用就是负责处理这项事务的。找到进程id对应的进程之后，将进程Env的env\_pgfault\_upcall域设置好即可。
+
+\subsection{Exercise 5}
+\exercise{Exercise 5}{Implement the code in kern/trap.c  required to dispatch page faults the user-mode handler. Be sure to take appropriate precautions when writing into the exception stack. (What happens if the user environment runs out of space on the exception stack?)}
+本练习要完成缺页中断处理程序，内核在处理缺页中断时会先把寄存器信息存放在user exception stack上，并且存放成UTrapframe结构。根据提示，如果是递归的缺页中断则除了存放UTrapframe之外还要留一个32位的空间存放eip，否则不用。对tf->tf\_esp分进行判断即可知是否在递归状态：第一次时其还未指向UXSTACKTOP-1\~{}UXSTACKTOP-PGSIZE的地方。然后对存放空间进行权限检查。将Trapframe的各项信息存入UTrapframe中后，设置好缺页中断处理程序再调用即可。
+
+\subsection{Exercise 6}
+\exercise{Exercise 6}{Implement the \_pgfault\_upcall routine in lib/pfentry.S. The interesting part is returning to the original point in the user code that caused the page fault. You'll return directly there, without going back through the kernel. The hard part is simultaneously switching stacks and re-loading the EIP.}
+缺页中断处理完毕之后返回，根据UTrapframe的结构，首先恢复trap-time之前的eip位置，即把UTrapframe的eip存放至先前esp下面的一个位置。不过由于恢复通用寄存器时有可能会把eax等寄存器的值恢复，所以在此之前完成这项操作可以不用进行压栈弹栈的麻烦。了解UTrapframe的结构，算准位置读取eip和esp即可。之后恢复通用寄存器，eflags，弹出esp后切换到之前设置好的eip。
+
+\subsection{Exercise 7}
+\exercise{Exercise 7}{Finish set\_pgfault\_handler() in lib/pgfault.c.}
+设置缺页中断处理程序，首先为user exception stack分配一个物理页面，然后再为进程设置缺页中断调用\_pgfault\_upcall即可。经测试，faultread, faultdie, faultalloc, faultallocbad测试均通过。
+
+\subsection{Exercise 8}
+\exercise{Exercise 8}{Implement fork and pgfault in lib/fork.c. }
+本练习需要完成Copy-on-Write(COW) Fork功能，即写时复制功能，其可以提高创建子进程的效率。写时复制的基本原理就是创建子进程时，仅复制页面映射关系给子进程，而不是跟dumbfork()一样复制所有的页面，仅当父进程或子进程试图进行的写的操作时才对页面进行复制。fork()的工作流程如下：\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+父进程设置pgfault()缺页中断处理程序，当试图对标记为COW的页面进行写时，需要分配一个新的页面，然后把页面映射到写的位置。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+父进程调用sys\_exofork创建一个子进程。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+对于每一个UTOP以下的可写或者COW的页面，父进程把页面映射到子进程，设置为COW，然后把页面以COW方式再映射回自己。子进程的异常栈则需要另外分配页面，因为如果映射为COW的话，发生缺页中断时进程将无法对COW的异常栈进行写，这样的话又回产生缺页中断，如此递归会造成死锁。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+父进程为子进程设置用户缺页中断入口。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+完成以上工作后，将子进程标记为ENV\_RUNNABLE状态。\\
+\hline
+\end{tabular}
+\\
+
+本练习需要完成三个函数以实现fork功能：pgfault(), duppage(), fork()。
+\begin{itemize}
+\item pgfault()\\
+pgfault()函数用以处理对COW页面进行写操作时的缺页中断。根据UTrapframe的utf\_err的域是否为FEC\_WR可以判断是否写操作，再判断页表是否为PTE\_COW类型即可。然后分配一个临时的物理页面，将原来的页面复制到临时页面，最后将临时页面重新映射到进程即可，这样就完成了页面的复制工作。
+\item duppage()\\
+duppage()函数负责将给定的虚拟空间页面映射到给定的进程中去。需要对页面的不同类型进行分别处理：若页面是COW或者可写的，则需要把页面在父进程和子进程都映射为COW的（如果页面已经是COW的，那说明父进程仍跟其他进程有着共同的COW页面，因此需要重新映射一次，以区别现在的子进程和其他进程）；否则的话为只读或非COW，那么在父进程不需要重新映射。
+\item fork()\\
+根据上述流程，fork()创建一个子进程后将页面映射关系复制给子进程。异常栈需要另外分配物理页面。枚举每一个页目录项和页表项，如果页面存在则映射到子进程(使用duppage函数)。\\
+\end{itemize}
+
+\subsection{Exercise 9}
+\exercise{Exercise 9}{Modify kern/trapentry.S and kern/trap.c to initialize the appropriate entries in the IDT and provide handlers for IRQs 0 through 15. Then modify the code in env\_alloc() in kern/env.c to ensure that user environments are always run with interrupts enabled.}
+根据inc/trap.h中的IRQ号定义，只需在trapentry.S中增加IRQ\_TIMER, IRQ\_KBD, IRQ\_IDE, IRQ\_ERROR, IRQ\_SPURIOUS等中断处理程序，IRQ都是不带ERROR CODE的，因此使用TRAPHANDLER\_NOEC。\\
+在trap.c中对idt表进行初始化，由于前面做了challenge将中断向量入口都做成了表，因此这部分只需要判断中断向量号是否在IRQ\_OFFSET\~{}IRQ\_OFFSET+15之间即可。IRQ为中断，用户态不可调用，故SETGATE参数的istrap为0，dpl为0。\\
+开启用户进程的中断，需要在创建进程时将进程的eflags寄存器的FL\_IF置1。将eflags与FL\_IF相或即可。\\
+
+\subsection{Exercise 10}
+\exercise{Exercise 10}{Modify the kernel's trap\_dispatch() function so that it calls sched\_yield()  to find and run a different environment whenever a clock interrupt takes place. }
+在trapdispatch()中对不同的中断进行处理，当用户用完时间片时就产生一个时钟中断，对trapno进行判断，如果为IRQ\_OFFSET + IRQ\_TIMER则调用sched\_yield()切换到其他的进程。同时在进入内核态后要关闭中断，使用cli命令，我是在调用中断处理程序TRAPHANDLER的时候关闭的。
+
+\subsubsection{Question 1}
+\exercise{Question 1}{How many instruction of user code are executed between each interrupt?}
+我认为在用户态程序中执行指令的条数没有切确的条数。Exercise 10的两个问题我采用如下的方法来计数：使用vb命令，首先在进入时钟中断处理程序的入口处设置一个断点，即在kernel.asm文件中找TRAPHANDLER\_NOEC(trap\_irq\_timer, IRQ\_OFFSET + IRQ\_TIMER)的第一条指令，然后在内核出中断的位置设置一个断点，即在env\_pop\_tf的iret语句(同样在kernel.asm下)，两者之间的指令条数就是内核态执行指令的条数；按照理论来说，从上述第二个断点再回到第一个断点就是用户态程序执行指令的条数，但实际上跟踪发现期间只有1条指令，因为调试过程中时间比较长时钟中断早已产生。因此没有切确的条数。\\
+使用的命令为：\\
+vb 0x08:0xf0104190   // enter timer interrupt handler\\
+vb 0x08:0xf0103929   // iret\\
+
+\subsubsection{Question 2}
+\exercise{Question 2}{How many instructions of kernel code are executed to handle the interrupt?}
+根据上述执行过程，跟踪到进入时钟中断指令的计数t1=10938910，内核态返回用户态程序最后一条指令iret指令计数t2=10957914，得到内核态执行指令条数为t2-t1+1=19005条。
+
+\subsection{Exercise 11}
+\exercise{Exercise 11}{Implement sys\_ipc\_recv and sys\_ipc\_can\_send in kern/syscall.c. When you call envid2env in these routines, you should set the checkperm flag to 0, meaning that any environment is allowed to send IPC messages to any other environment, and the kernel does no special permission checking other than verifying that the target envid is valid.\\
+Then implement the ipc\_recv and ipc\_send functions in lib/ipc.c. }
+本部分要实现进程间的通信功能，发送方可以发送一个32位的value给接收方，也可以发送一个页面（使接收方建立到对应物理页面的映射，从而实现页面的共享）。需要完成以下几个部分：
+\begin{itemize}
+\item sys\_ipc\_try\_send()\\
+向指定的进程id发送一个value，如果参数va!=0那么发送映射在va的页面，使接受者可以获得页面的映射。其工作的流程如下：\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+检查目标进程的合法性，即看envid对应的进程是否存在。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+检查目标进程是否处在等待接受的状态。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+检查发送页面的合法性，看其是否在UTOP之下、是否页面对齐；检查权限的合法性，类似于sys\_page\_alloc；检查发送的物理页面是否存在。\\
+\hline
+\end{tabular}
+\\$\Downarrow$\\
+\begin{tabular}{|p{\textwidth *2/3}|}
+\hline
+将相应的发送信息记录在目标进程中，并把页面映射到指定目标进程的dstva上。重新标记目标进程为ENV\_RUNNABLE。\\
+\hline
+\end{tabular}
+\item sys\_ipc\_recv()\\
+使进程进入接受状态的系统调用，标记进程的env\_ipc\_recving为1，表明进程处于等待接受的状态，同时设置env\_ipc\_dstva，将进程的运行状态置为ENV\_NOT\_RUNNABLE，然后进入等待状态，调用sched\_yield()切换到其他进程。
+\item ipc\_send\\
+用户库中的ipc\_send函数，始终调用sys\_ipc\_send进行发送，直到成功或者获得发送失败的信息为止。
+\item ipc\_recv\\
+用户库中的ipc\_recv函数，调用sys\_ipc\_recv进行接受，将接收到的信息存入参数中，然后返回。
+\item trap\_dispatch\\
+对于IPC的发送和接受系统调用进行分派。
+\end{itemize}
+
+
+\section{实习难点}
+本次实习中遇到很多的bug，调试的过程中真是很崩溃，很多次想放弃。花了最长时间来调试的有两个方面：\\
+
+sys\_page\_alloc对分配的页面清0问题。起初我直接使用memset(va, 0, PGSIZE)，但是part A总是失败，百思不得其解。后来一步一步的debug才发现问题的所在，了解到对页面进行清零不能直接使用va，而应当使用page2kva(page)，因为如果直接使用va将会清空当前进程对应的虚拟空间页面，从而造成错误，而我们的目标是对envid对应的进程空间分配的到的页面进行清零，使用page2kva(pa)则不会出现这个问题。\\
+
+fork()中遇到的page\_insert问题，这个问题我足足调试了两天才找到bug所在:(，五一因此而几乎荒废。写完fork()函数之后，运行forktree程序时总是会出现一个奇怪的问题，生成的子进程树全部都是1，即由正确的"", 0, 1, 00, 01, 10, 11, 000, 001, 010, 011, 100, 101, 110, 111变成了"", 1, 1, 11, 11, 11, 11, 111, 111, 111, 111, 111, 111, 111, 111。反复检查fork程序后都没有发现问题，刚开始没仔细想还试着把之前的工作推倒重来。不过通过每次把cur字符串所在的页面表打印出来后，对比下我意识到可能是父进程和子进程的copy-on-write页面出现了问题，即对页面进行写的时候本该分配一个新的页面，使得父进程和子进程有不同的页面，而实际上没有操作成功，导致进程之间的页面仍然是同一块，导致出现所有的字符串都是1的现象。顺着fork程序，终于在page\_insert找到了问题的所在，原来在Lab 2的时候我没有对页表项的PTE\_P位进行检查就与原有页面进行比较，从而没有把页表项设置正确，因此进程之间指向的仍是同样的物理页面，所以出来相同的字符串。
+
+\section{收获和总结}
+本次lab花的时间最多的是调试，不过正是”山重水复疑无路，柳暗花明又一村”，总算坚持下来了。之前提到UNIX的fork时总是觉得很遥远，但是到自己来实现的时候又觉得很有亲切感。当然，本次lab学到的还有进程调度、IRQ中断和进程通信的内容，这些都让我对操作系统有了更深的认识。
+
+\begin{thebibliography}{10}
+\bibitem{bb1} 助教课程lab 4讲义
+\bibitem{bb2} 陈老师以前的lab 4讲义
+\bibitem{bb3} Section 5.8, IA-32 Intel Architecture Software Developer's Manual, Volume 3
+\bibitem{bb4} Google
+\end{thebibliography}
+\end{document}
+
