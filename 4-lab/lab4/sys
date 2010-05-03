@@ -1,0 +1,198 @@
+./inc/lib.h:void	sys_cputs(const char *string, size_t len);
+二进制文件 ./kern/.syscall.c.swp 匹配
+./kern/syscall.c:sys_cputs(const char *s, size_t len)
+./kern/syscall.c:		sys_cputs((const char *)a1, (size_t)a2);
+./lib/console.c:	sys_cputs(&c, 1);
+./lib/syscall.c:sys_cputs(const char *s, size_t len)
+./lib/printf.c:// based on printfmt() and the sys_cputs() system call.
+./lib/printf.c:		sys_cputs(b->buf, b->idx);
+./lib/printf.c:	sys_cputs(b.buf, b.idx);
+二进制文件 ./obj/kern/kernel 匹配
+二进制文件 ./obj/kern/bochs.img 匹配
+./obj/kern/kernel.asm:		sys_cputs((const char *)a1, (size_t)a2);
+二进制文件 ./obj/lib/syscall.o 匹配
+二进制文件 ./obj/lib/printf.o 匹配
+二进制文件 ./obj/lib/libjos.a 匹配
+二进制文件 ./obj/lib/console.o 匹配
+二进制文件 ./obj/user/pingpongs 匹配
+./obj/user/faultallocbad.sym:00800c74 T sys_cputs
+./obj/user/forktree.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/forktree.asm:  8001b4:	e8 6b 0a 00 00       	call   800c24 <sys_cputs>
+./obj/user/forktree.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/forktree.asm:  800208:	e8 17 0a 00 00       	call   800c24 <sys_cputs>
+./obj/user/forktree.asm:00800c24 <sys_cputs>:
+./obj/user/forktree.asm:sys_cputs(const char *s, size_t len)
+./obj/user/forktree.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/dumbfork 匹配
+二进制文件 ./obj/user/faultread 匹配
+二进制文件 ./obj/user/spin 匹配
+./obj/user/pingpong.sym:00800c24 T sys_cputs
+./obj/user/faultbadhandler.sym:00800110 T sys_cputs
+./obj/user/yield1.asm:	sys_cputs("dddddfffff", 10);
+./obj/user/yield1.asm:  800062:	e8 7d 0b 00 00       	call   800be4 <sys_cputs>
+./obj/user/yield1.asm:	sys_cputs("dddddfffff", 10);
+./obj/user/yield1.asm:	sys_cputs("dddddfffff", 10);
+./obj/user/yield1.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/yield1.asm:  80016c:	e8 73 0a 00 00       	call   800be4 <sys_cputs>
+./obj/user/yield1.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/yield1.asm:  8001c0:	e8 1f 0a 00 00       	call   800be4 <sys_cputs>
+./obj/user/yield1.asm:00800be4 <sys_cputs>:
+./obj/user/yield1.asm:sys_cputs(const char *s, size_t len)
+./obj/user/yield1.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultwrite.asm:008000dc <sys_cputs>:
+./obj/user/faultwrite.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultwrite.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultwrite.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultwrite.asm:  80058c:	e8 4b fb ff ff       	call   8000dc <sys_cputs>
+./obj/user/faultwrite.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultwrite.asm:  8005e0:	e8 f7 fa ff ff       	call   8000dc <sys_cputs>
+./obj/user/faultbadhandler.asm:00800110 <sys_cputs>:
+./obj/user/faultbadhandler.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultbadhandler.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultbadhandler.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultbadhandler.asm:  8005c0:	e8 4b fb ff ff       	call   800110 <sys_cputs>
+./obj/user/faultbadhandler.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultbadhandler.asm:  800614:	e8 f7 fa ff ff       	call   800110 <sys_cputs>
+./obj/user/faultdie.sym:00800bc4 T sys_cputs
+./obj/user/idle.sym:008000e4 T sys_cputs
+./obj/user/primes.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/primes.asm:  800260:	e8 6f 0a 00 00       	call   800cd4 <sys_cputs>
+./obj/user/primes.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/primes.asm:  8002b4:	e8 1b 0a 00 00       	call   800cd4 <sys_cputs>
+./obj/user/primes.asm:00800cd4 <sys_cputs>:
+./obj/user/primes.asm:sys_cputs(const char *s, size_t len)
+./obj/user/primes.asm:sys_cputs(const char *s, size_t len)
+./obj/user/fairness.sym:00800bf4 T sys_cputs
+二进制文件 ./obj/user/faultnostack 匹配
+./obj/user/pingpongs.sym:00800c74 T sys_cputs
+./obj/user/yield.sym:00800bd4 T sys_cputs
+./obj/user/primes.sym:00800cd4 T sys_cputs
+二进制文件 ./obj/user/faultallocbad 匹配
+二进制文件 ./obj/user/hello 匹配
+二进制文件 ./obj/user/yield1 匹配
+二进制文件 ./obj/user/yield 匹配
+./obj/user/faultread.sym:00800b84 T sys_cputs
+./obj/user/faultdie.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultdie.asm:  80014c:	e8 73 0a 00 00       	call   800bc4 <sys_cputs>
+./obj/user/faultdie.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultdie.asm:  8001a0:	e8 1f 0a 00 00       	call   800bc4 <sys_cputs>
+./obj/user/faultdie.asm:00800bc4 <sys_cputs>:
+./obj/user/faultdie.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultdie.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultevilhandler.asm:00800110 <sys_cputs>:
+./obj/user/faultevilhandler.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultevilhandler.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultevilhandler.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultevilhandler.asm:  8005c0:	e8 4b fb ff ff       	call   800110 <sys_cputs>
+./obj/user/faultevilhandler.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultevilhandler.asm:  800614:	e8 f7 fa ff ff       	call   800110 <sys_cputs>
+./obj/user/faultalloc.sym:00800c84 T sys_cputs
+./obj/user/faultnostack.sym:008000f4 T sys_cputs
+二进制文件 ./obj/user/primes 匹配
+./obj/user/faultevilhandler.sym:00800110 T sys_cputs
+./obj/user/pingpongs.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/pingpongs.asm:  800204:	e8 6b 0a 00 00       	call   800c74 <sys_cputs>
+./obj/user/pingpongs.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/pingpongs.asm:  800258:	e8 17 0a 00 00       	call   800c74 <sys_cputs>
+./obj/user/pingpongs.asm:00800c74 <sys_cputs>:
+./obj/user/pingpongs.asm:sys_cputs(const char *s, size_t len)
+./obj/user/pingpongs.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/pingpong 匹配
+./obj/user/hello.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/hello.asm:  800118:	e8 77 0a 00 00       	call   800b94 <sys_cputs>
+./obj/user/hello.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/hello.asm:  80016c:	e8 23 0a 00 00       	call   800b94 <sys_cputs>
+./obj/user/hello.asm:00800b94 <sys_cputs>:
+./obj/user/hello.asm:sys_cputs(const char *s, size_t len)
+./obj/user/hello.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultwrite.sym:008000dc T sys_cputs
+./obj/user/faultalloc.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultalloc.asm:  800214:	e8 6b 0a 00 00       	call   800c84 <sys_cputs>
+./obj/user/faultalloc.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultalloc.asm:  800268:	e8 17 0a 00 00       	call   800c84 <sys_cputs>
+./obj/user/faultalloc.asm:00800c84 <sys_cputs>:
+./obj/user/faultalloc.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultalloc.asm:sys_cputs(const char *s, size_t len)
+./obj/user/yield.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/yield.asm:  800158:	e8 77 0a 00 00       	call   800bd4 <sys_cputs>
+./obj/user/yield.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/yield.asm:  8001ac:	e8 23 0a 00 00       	call   800bd4 <sys_cputs>
+./obj/user/yield.asm:00800bd4 <sys_cputs>:
+./obj/user/yield.asm:sys_cputs(const char *s, size_t len)
+./obj/user/yield.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/forktree 匹配
+./obj/user/idle.asm:008000e4 <sys_cputs>:
+./obj/user/idle.asm:sys_cputs(const char *s, size_t len)
+./obj/user/idle.asm:sys_cputs(const char *s, size_t len)
+./obj/user/idle.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/idle.asm:  800594:	e8 4b fb ff ff       	call   8000e4 <sys_cputs>
+./obj/user/idle.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/idle.asm:  8005e8:	e8 f7 fa ff ff       	call   8000e4 <sys_cputs>
+二进制文件 ./obj/user/faultbadhandler 匹配
+二进制文件 ./obj/user/faultalloc 匹配
+二进制文件 ./obj/user/faultevilhandler 匹配
+./obj/user/spin.sym:00800bf4 T sys_cputs
+./obj/user/faultallocbad.asm:	sys_cputs((char*)0xDEADBEEF, 4);
+./obj/user/faultallocbad.asm:  800055:	e8 1a 0c 00 00       	call   800c74 <sys_cputs>
+./obj/user/faultallocbad.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultallocbad.asm:  800200:	e8 6f 0a 00 00       	call   800c74 <sys_cputs>
+./obj/user/faultallocbad.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultallocbad.asm:  800254:	e8 1b 0a 00 00       	call   800c74 <sys_cputs>
+./obj/user/faultallocbad.asm:00800c74 <sys_cputs>:
+./obj/user/faultallocbad.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultallocbad.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/faultdie 匹配
+二进制文件 ./obj/user/idle 匹配
+./obj/user/fairness.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/fairness.asm:  800180:	e8 6f 0a 00 00       	call   800bf4 <sys_cputs>
+./obj/user/fairness.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/fairness.asm:  8001d4:	e8 1b 0a 00 00       	call   800bf4 <sys_cputs>
+./obj/user/fairness.asm:00800bf4 <sys_cputs>:
+./obj/user/fairness.asm:sys_cputs(const char *s, size_t len)
+./obj/user/fairness.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/fairness 匹配
+./obj/user/forktree.sym:00800c24 T sys_cputs
+./obj/user/dumbfork.sym:00800de4 T sys_cputs
+./obj/user/faultread.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultread.asm:  80010c:	e8 73 0a 00 00       	call   800b84 <sys_cputs>
+./obj/user/faultread.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultread.asm:  800160:	e8 1f 0a 00 00       	call   800b84 <sys_cputs>
+./obj/user/faultread.asm:00800b84 <sys_cputs>:
+./obj/user/faultread.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultread.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/faultallocbad.o 匹配
+./obj/user/dumbfork.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/dumbfork.asm:  800368:	e8 77 0a 00 00       	call   800de4 <sys_cputs>
+./obj/user/dumbfork.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/dumbfork.asm:  8003bc:	e8 23 0a 00 00       	call   800de4 <sys_cputs>
+./obj/user/dumbfork.asm:00800de4 <sys_cputs>:
+./obj/user/dumbfork.asm:sys_cputs(const char *s, size_t len)
+./obj/user/dumbfork.asm:sys_cputs(const char *s, size_t len)
+./obj/user/spin.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/spin.asm:  800178:	e8 77 0a 00 00       	call   800bf4 <sys_cputs>
+./obj/user/spin.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/spin.asm:  8001cc:	e8 23 0a 00 00       	call   800bf4 <sys_cputs>
+./obj/user/spin.asm:00800bf4 <sys_cputs>:
+./obj/user/spin.asm:sys_cputs(const char *s, size_t len)
+./obj/user/spin.asm:sys_cputs(const char *s, size_t len)
+./obj/user/hello.sym:00800b94 T sys_cputs
+./obj/user/faultnostack.asm:008000f4 <sys_cputs>:
+./obj/user/faultnostack.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultnostack.asm:sys_cputs(const char *s, size_t len)
+./obj/user/faultnostack.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/faultnostack.asm:  8005b0:	e8 3f fb ff ff       	call   8000f4 <sys_cputs>
+./obj/user/faultnostack.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/faultnostack.asm:  800604:	e8 eb fa ff ff       	call   8000f4 <sys_cputs>
+./obj/user/pingpong.asm:	sys_cputs(b.buf, b.idx);
+./obj/user/pingpong.asm:  8001b0:	e8 6f 0a 00 00       	call   800c24 <sys_cputs>
+./obj/user/pingpong.asm:		sys_cputs(b->buf, b->idx);
+./obj/user/pingpong.asm:  800204:	e8 1b 0a 00 00       	call   800c24 <sys_cputs>
+./obj/user/pingpong.asm:00800c24 <sys_cputs>:
+./obj/user/pingpong.asm:sys_cputs(const char *s, size_t len)
+./obj/user/pingpong.asm:sys_cputs(const char *s, size_t len)
+二进制文件 ./obj/user/faultwrite 匹配
+./obj/user/yield1.sym:00800be4 T sys_cputs
+./tags:sys_cputs	kern/syscall.c	/^sys_cputs(const char *s, size_t len)$/;"	f	file:
+./tags:sys_cputs	lib/syscall.c	/^sys_cputs(const char *s, size_t len)$/;"	f
+./user/faultallocbad.c:// doesn't work because we sys_cputs instead of cprintf (exercise: why?)
+./user/faultallocbad.c:	sys_cputs((char*)0xDEADBEEF, 4);
