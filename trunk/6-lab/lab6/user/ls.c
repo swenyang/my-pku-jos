@@ -11,8 +11,13 @@ ls(const char *path, const char *prefix)
 	int r;
 	struct Stat st;
 
-	if ((r = stat(path, &st)) < 0)
-		panic("stat %s: %e", path, r);
+	if ((r = stat(path, &st)) < 0) {
+		if (r == -E_NOT_FOUND) {
+			cprintf("ls: path %s not exists\n", path);
+			exit();
+		}
+		else panic("stat %s: %e", path, r);
+	}
 	if (st.st_isdir && !flag['d'])
 		lsdir(path, prefix);
 	else
