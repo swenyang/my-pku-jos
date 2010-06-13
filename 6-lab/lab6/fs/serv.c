@@ -109,7 +109,15 @@ serve_open(envid_t envid, struct Fsreq_open *rq)
 	if ((r = file_open(path, &f)) < 0) {
 		if (debug)
 			cprintf("file_open failed: %e", r);
-		goto out;
+		// lab 6 for create file
+		if(rq->req_omode & O_CREAT) {
+			if ((r = file_create(path, &f)) < 0) {
+				if (debug)
+					cprintf("file_open create failed: %e", r);
+				goto out;
+			}
+		}
+		else goto out;
 	}
 
 	// Save the file pointer

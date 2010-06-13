@@ -23,16 +23,26 @@ runcmd(char* s)
 {
 	char *argv[MAXARGS], *t, argv0buf[BUFSIZ];
 	int argc, c, i, r=0, p[2], fd, pipe_child;
+	bool bgflag = 0;
+	bool multiflag = 0;
+	char temp;
 
 	pipe_child = 0;
 	gettoken(s, 0);
-	cprintf("!! %s\n", s);
 	
 again:
 	argc = 0;
 	while (1) {
-		switch ((c = gettoken(0, &t))) {
+		c = gettoken(0, &t);
+		//cprintf("c: %c\n", c);
+		switch (c) {
+		case '&':
+			bgflag = 1;
+			goto runit;
 
+		case ';':
+			multiflag = 1;
+			goto runit;
 		case 'w':	// Add an argument
 			if (argc == MAXARGS) {
 				cprintf("too many arguments\n");
@@ -70,7 +80,26 @@ again:
 			
 		case '>':	// Output redirection
 			// Grab the filename from the argument list
-			if (gettoken(0, &t) != 'w') {
+			// append or not
+			if ((temp = gettoken(0, &t)) == '>') {
+				if ((gettoken(0, &t)) != 'w') {
+					cprintf("syntax error: >> not followed by word\n");
+					exit();
+				}
+				fd = open(t, O_CREAT | O_WRONLY);
+				if (fd < 0)
+					panic("error open fd in >> rd: %e\n", r);
+				if (fd != 1)
+					if ((r = dup(fd, 1)) < 0)
+						panic("error dup fd in >> rd: %e\n", r);
+				struct Fd * f;
+				if ((r = fd_lookup(fd, &f)) < 0)
+					panic("error fd %e\n", r);
+				if ((r = seek(fd, f->fd_file.file.f_size)) < 0)
+					panic("seek error %e\n", r);
+				break;
+			}
+			else if (temp != 'w') {
 				cprintf("syntax error: > not followed by word\n");
 				exit();
 			}
@@ -84,15 +113,15 @@ again:
 			
 			// LAB 5: Your code here.
 			//panic("> redirection not implemented");
-			fd = open(t, O_WRONLY);
+			fd = open(t, O_WRONLY | O_CREAT);
 			if (fd < 0)
-				panic("error: open fd in < rd: %e\n", r);
+				panic("error: open fd in > rd: %e\n", r);
 			if (fd != 1) {
 				if ((r = dup(fd, 1)) < 0)
 					panic("error: dup fd in > rd: %e\n", r);
-				if ((r = close(fd)) < 0)
-					panic("error: close fd in > rd: %e\n", r);
 			}
+			if ((r = close(fd)) < 0)
+				panic("error: close fd in > rd: %e\n", r);
 			break;
 			
 		case '|':	// Pipe
@@ -193,13 +222,21 @@ runit:
 
 	// In the parent, close all file descriptors and wait for the
 	// spawned command to exit.
-	close_all();
+	if (multiflag == 0)
+		close_all();
 	if (r >= 0) {
-		if (debug)
-			cprintf("[%08x] WAIT %s %08x\n", env->env_id, argv[0], r);
-		wait(r);
-		if (debug)
-			cprintf("[%08x] wait finished\n", env->env_id);
+		if (bgflag) {
+			if (debug) {
+				cprintf("background running [%08x]\n", env->env_id);
+			}
+		}
+		else {
+			if (debug)
+				cprintf("[%08x] WAIT %s %08x\n", env->env_id, argv[0], r);
+			wait(r);
+			if (debug)
+				cprintf("[%08x] wait finished\n", env->env_id);
+		}
 	}
 
 	// If we were the left-hand part of a pipe,
@@ -212,6 +249,10 @@ runit:
 			cprintf("[%08x] wait finished\n", env->env_id);
 	}
 
+	if (multiflag) {
+		multiflag = 0;
+		goto again;
+	}
 	// Done!
 	exit();
 }
@@ -255,6 +296,23 @@ _gettoken(char *s, char **p1, char **p2)
 			cprintf("EOL\n");
 		return 0;
 	}
+
+	// quote
+	if (*s == '"') {
+		*s++ = 0;
+		*p1 = s;
+		while(*s != '"' && *s != 0)
+			s++;
+		if (*s == 0) {
+			if (debug > 1)
+				cprintf("\" not matched\n");
+			exit();
+		}
+		*s++ = 0;
+		*p2 = s;
+		return 'w';
+	}
+
 	if (strchr(SYMBOLS, *s)) {
 		t = *s;
 		*p1 = s;
@@ -282,14 +340,17 @@ gettoken(char *s, char **p1)
 {
 	static int c, nc;
 	static char* np1, *np2;
+	//cprintf("np1 %s np2 %s\n", np1, np2);
 
 	if (s) {
 		nc = _gettoken(s, &np1, &np2);
+		//cprintf("return char %c\n", (char)nc);
 		return 0;
 	}
 	c = nc;
 	*p1 = np1;
 	nc = _gettoken(np2, &np1, &np2);
+	//cprintf("nc %c\n", nc);
 	return c;
 }
 
